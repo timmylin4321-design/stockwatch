@@ -2061,7 +2061,7 @@ async function loadIndNews(){
     const jobs=[]; for(const m of stocks) for(const day of days) jobs.push([m,day]);
     for(let i=0;i<jobs.length;i+=6){
       const res=await Promise.all(jobs.slice(i,i+6).map(([m,day])=>newsDay(m.code,day).then(v=>v.map(n=>({...n,code:m.code,name:m.name}))).catch(e=>{ err=e.message; return []; })));
-      for(const n of res.flat()){ if(/股市爆料同學會/.test(n.t)) continue;  // 排除論壇貼文
+      for(const n of res.flat()){ if(/股市爆料同學會|個股概覽|即時報價|股價走勢圖/.test(n.t)) continue;  // 排除論壇貼文與報價頁
         const t=n.t.replace(/\s*-\s*[^-]+$/,''); if(seen.has(t)) continue; seen.add(t); items.push({...n,t}); }
     }
     items.sort((a,b)=>a.d<b.d?1:-1);
