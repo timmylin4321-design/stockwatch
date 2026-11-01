@@ -312,6 +312,19 @@
   .icAI button.pri{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
   .icAI .meta{font-size:10.5px}
   .indAIBox{padding:0 !important;font-size:12.5px !important}
+  .rsWrap{margin-top:6px}
+  .rsHead{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:4px 0 6px} .rsHead b{font-size:15px}
+  .rsBy{font-size:10.5px;color:var(--muted);border:1px solid var(--line);border-radius:10px;padding:1px 7px;white-space:nowrap} .rsBy.ai{color:#b197fc;border-color:#5f3dc4}
+  .rsLead{font-size:12.5px;color:#ddd;background:#1a1a1a;border-left:3px solid var(--accent);padding:6px 8px;border-radius:3px;margin-bottom:4px}
+  .rsCard{display:flex;gap:10px;padding:9px 0;border-bottom:1px solid #1f1f1f}
+  .rsIco{flex:0 0 46px;height:46px;border-radius:9px;display:flex;align-items:center;justify-content:center;box-shadow:inset 0 0 0 1px rgba(255,255,255,.08)}
+  .rsIco svg{width:24px;height:24px;fill:none;stroke:#fff;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+  .rsBody{min-width:0;flex:1} .rsT{font-size:13.5px;font-weight:600;color:#fff;margin-bottom:2px}
+  .rsD{font-size:12.5px;line-height:1.55;color:#cfcfcf}
+  .rsM{display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px;margin-top:4px}
+  .rsSrc{font-size:11px;color:var(--muted);text-decoration:none} a.rsSrc:hover{color:var(--text);text-decoration:underline}
+  .rsStk{cursor:pointer;margin:0} .rsStk:hover{background:rgba(41,98,255,.3)}
+  .rsWatch{font-size:11.5px;color:var(--muted);margin:8px 0 2px;line-height:1.6} .rsWatch b{display:block;color:var(--text);font-weight:600;margin-bottom:2px}
   .tsep{width:24px;height:1px;background:var(--line);margin:6px 0}
   .chartWrap{flex:1;position:relative;min-height:0;min-width:0}
   #chart{position:absolute;inset:0}
@@ -2059,6 +2072,8 @@ async function loadIndNews(){
     for(let i=0;i<nDays;i++){ const d=new Date(end); d.setDate(d.getDate()-i); days.push(ymdS(d)); }
     const stocks=indKeyStocks(r), items=[], seen=new Set(); let err='';
     const jobs=[]; for(const m of stocks) for(const day of days) jobs.push([m,day]);
+    const ext=[]; for(let i=days.length;i<8;i++){ const d=new Date(end); d.setDate(d.getDate()-i); ext.push(ymdS(d)); }  // 影響最大的 2 檔多看一週，找背景題材
+    for(const m of stocks.slice(0,2)) for(const day of ext) jobs.push([m,day]);
     for(let i=0;i<jobs.length;i+=6){
       const res=await Promise.all(jobs.slice(i,i+6).map(([m,day])=>newsDay(m.code,day).then(v=>v.map(n=>({...n,code:m.code,name:m.name}))).catch(e=>{ err=e.message; return []; })));
       for(const n of res.flat()){ if(/股市爆料同學會|個股概覽|即時報價|股價走勢圖/.test(n.t)) continue;  // 排除論壇貼文與報價頁
@@ -2069,6 +2084,64 @@ async function loadIndNews(){
   }finally{ indNewsBusy[k]=false; }
   if(indKey()===k&&indFocus) renderDetail();
 }
+/* 原因摘要卡片：沒有金鑰時用關鍵字把新聞分主題整理；有金鑰時由 AI 整理成卡片（來源一律對回實際新聞） */
+const ICO={
+  geo:['#1f6feb','#0b3d91','<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.6 2.6 2.6 14.4 0 17M12 3.5c-2.6 2.6-2.6 14.4 0 17"/>'],
+  price:['#f59f00','#a65a00','<path d="M4 17l5-5 4 3 7-8"/><path d="M15 7h5v5"/>'],
+  earn:['#12b886','#08664a','<path d="M5 20V11M10 20V6M15 20v-7M20 20V9"/>'],
+  demand:['#7950f2','#3b1fa3','<path d="M3.5 8L12 4l8.5 4v8L12 20l-8.5-4z"/><path d="M3.5 8L12 12l8.5-4M12 12v8"/>'],
+  chip:['#e8590c','#8a2c00','<circle cx="9" cy="8" r="3"/><circle cx="17" cy="9.5" r="2.4"/><path d="M3.5 19c.6-3.4 2.8-5 5.5-5s4.9 1.6 5.5 5M14.5 15c2.6-.6 5 .6 5.8 4"/>'],
+  policy:['#4c6ef5','#1c2f99','<path d="M3.5 9L12 4.5 20.5 9z"/><path d="M5.5 10v7M9.5 10v7M14.5 10v7M18.5 10v7M3.5 19.5h17"/>'],
+  tech:['#15aabf','#0b5c68','<rect x="6.5" y="6.5" width="11" height="11" rx="1.5"/><path d="M9.5 3v3.5M14.5 3v3.5M9.5 17.5V21M14.5 17.5V21M3 9.5h3.5M3 14.5h3.5M17.5 9.5H21M17.5 14.5H21"/>'],
+  flow:['#d6336c','#7a1037','<path d="M4 8h13l-3-3M20 16H7l3 3"/>'],
+  conc:['#fab005','#8f5f00','<path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.8-5.2 2.8 1-5.8-4.3-4.1 5.9-.9z"/>'],
+  other:['#868e96','#3d4247','<rect x="4" y="5" width="16" height="14" rx="1.5"/><path d="M7.5 9h9M7.5 12.5h9M7.5 16h5"/>']};
+const THEMES=[
+  ['geo','國際局勢與地緣風險',/中東|紅海|荷莫茲|以色列|伊朗|胡塞|俄羅斯|烏克蘭|戰爭|衝突|地緣|制裁|關稅|川普|貿易戰|封鎖|停火/],
+  ['price','報價／運價變化',/運價|SCFI|BDI|運費|報價|漲價|調漲|價格|費率|牌價|價揚|喊漲/],
+  ['earn','營收與獲利表現',/營收|財報|EPS|獲利|毛利|淨利|法說|股利|配息|季報|年增|月增|賺/],
+  ['demand','需求與訂單',/需求|訂單|出貨|旺季|拉貨|產能|擴產|接單|滿載|缺貨|庫存/],
+  ['tech','產業題材發酵',/AI|伺服器|CoWoS|電動車|低軌|衛星|無人機|機器人|半導體|先進封裝|輝達|NVIDIA|綠能|核能|軍工/],
+  ['chip','法人與資金動向',/外資|投信|法人|買超|賣超|主力|融資|資金|籌碼|ETF|成分股/],
+  ['policy','政策與利率',/政策|補助|政府|央行|降息|升息|Fed|聯準會|利率|匯率|新台幣|法規/]];
+const icoHtml=t=>{ const c=ICO[t]||ICO.other; return `<div class="rsIco" style="background:linear-gradient(135deg,${c[0]},${c[1]})"><svg viewBox="0 0 24 24">${c[2]}</svg></div>`; };
+const mdS=d=>`${+d.slice(5,7)}/${+d.slice(8,10)}`;
+function ruleSummary(r,tret,N){
+  const cards=[], cs=indContrib(r), wOf=c=>(cs.find(m=>m.code===c)?.w)||0, used=new Set();
+  if(N&&N.items.length){
+    const sc=THEMES.map(([k,name,re])=>{ const hs=N.items.filter(n=>re.test(n.t)); return {k,name,hs,s:hs.reduce((s,n)=>s+0.15+wOf(n.code),0)}; })
+      .filter(x=>x.hs.length).sort((a,b)=>b.s-a.s);
+    for(const th of sc){ if(cards.length>=3) break;
+      const hs=th.hs.filter(n=>!used.has(n.t)).sort((a,b)=>(wOf(b.code)-wOf(a.code))||(a.d<b.d?1:-1)).slice(0,2); if(!hs.length) continue;
+      hs.forEach(n=>used.add(n.t));
+      const codes=[...new Set(hs.map(n=>n.code))];
+      cards.push({theme:th.k,title:th.name,desc:hs.map(n=>n.t).join('；'),refs:hs,stocks:codes}); }
+  }
+  const n=r.up+r.dn, br=n?r.up/n:0, dir=r.ret>=0?1:-1;
+  if(tret!=null&&(Math.sign(r.ret)!==Math.sign(tret)||Math.abs(r.ret-tret)>=1))
+    cards.push({theme:'flow',title:Math.sign(r.ret)!==Math.sign(tret)?(r.ret>=0?'逆勢上漲，資金轉進':'逆勢下跌，資金撤出'):(r.ret>tret?'表現強於大盤':'表現弱於大盤'),
+      desc:`加權指數 ${sgn(tret,2)}%，${r.name}類股 ${sgn(r.ret,2)}%，差距 ${Math.abs(r.ret-tret).toFixed(2)} 個百分點，${r.ret>tret?'資金明顯偏好這個族群':'資金明顯避開這個族群'}。`,src:'臺灣證交所盤後數據'});
+  const same=cs.filter(m=>Math.sign(m.c)===dir).sort((a,b)=>Math.abs(b.c)-Math.abs(a.c)), sum=same.reduce((s,m)=>s+Math.abs(m.c),0)||1, top=same.slice(0,2);
+  if(top.length){ const share=Math.round(top.reduce((s,m)=>s+Math.abs(m.c),0)/sum*100);
+    const broad=dir>0?br>=0.65:br<=0.35, narrow=dir>0?br<0.45:br>0.55;
+    cards.push({theme:'conc',title:broad?(dir>0?'族群普漲':'族群普跌'):narrow?(dir>0?'權值股撐盤':'權值股拖累'):(dir>0?'漲勢集中少數個股':'跌勢集中少數個股'),
+      desc:`${top.map(m=>`${m.name} ${sgn(m.ret,2)}%`).join('、')}約占${dir>0?'漲':'跌'}勢影響 ${share}%；全產業 ${r.up} 漲 ${r.dn} 跌。`,src:'臺灣證交所盤後數據',stocks:top.map(m=>m.code)}); }
+  return {cards};
+}
+function sumHtml(r,S,ai){
+  return `<div class="rsHead"><b>${esc(r.name)}${r.ret>=0?'為什麼漲？':'為什麼跌？'}</b><span class="rsBy ${ai?'ai':''}">${ai?'AI 整理':'依新聞關鍵字整理'}</span></div>`
+    +(S.headline?`<div class="rsLead">${esc(S.headline)}</div>`:'')
+    +S.cards.map((c,i)=>{ const ref=(c.refs||[])[0];
+      const src=ref?`<a class="rsSrc" href="${/^https?:\/\//i.test(ref.l||'')?escN(ref.l):'#'}" target="_blank" rel="noopener noreferrer">資料：${escN(ref.s||'新聞')} ${mdS(ref.d)}${(c.refs.length>1)?` 等 ${c.refs.length} 則`:''} ↗</a>`:`<span class="rsSrc">資料：${esc(c.src||'盤後數據')} ${indDs(indDate).slice(5).replace('-','/')}</span>`;
+      const tags=(c.stocks||[]).slice(0,3).map(code=>{ const m=r.mem.find(x=>x.code===code); return m?`<span class="nTag rsStk" data-c="${code}" data-n="${esc(m.name)}">${code} ${esc(m.name)}</span>`:''; }).join('');
+      return `<div class="rsCard">${icoHtml(c.theme)}<div class="rsBody"><div class="rsT">${i+1}. ${esc(c.title)}</div><div class="rsD">${esc(c.desc)}</div><div class="rsM">${src}${tags}</div></div></div>`; }).join('')
+    +(S.watch&&S.watch.length?`<div class="rsWatch"><b>需要再確認</b>${S.watch.map(w=>`<div>・${esc(w)}</div>`).join('')}</div>`:'');
+}
+const IND_AI_JSON=`你是台股產業分析助理，使用繁體中文。根據使用者提供的類股漲跌、成分股表現與編號新聞標題，整理這個產業上漲或下跌的原因。
+規則：只根據提供的資料，不可編造；每個原因盡量引用新聞編號佐證（refs）；沒有新聞佐證、只靠盤面數據推論的原因 refs 留空並在 desc 中寫明是推測；不給買賣建議。
+只輸出一個 JSON 物件，不要任何其他文字：
+{"headline":"一句話結論（30 字內）","reasons":[{"title":"原因標題（12 字內）","desc":"說明（60 字內）","theme":"geo|price|earn|demand|tech|chip|policy|flow|conc|other 擇一","refs":[新聞編號],"stocks":["相關個股代號"]}],"watch":["需要再確認的事（最多 2 點）"]}
+reasons 3–4 個，依重要性排序。`;
 function indPrompt(r,tret){
   const N=indNews[indKey()], cs=indContrib(r).sort((a,b)=>b.c-a.c);
   const L=[`產業：${r.name}（上市類股指數）`,`期間：${indPer?`${(IND_PERS.find(p=>p[0]===indPer)||[])[1]}，至 ${indDs(indDate)}`:indDs(indDate)+' 當日'}`,
@@ -2077,7 +2150,7 @@ function indPrompt(r,tret){
   const pickRows=[...cs.slice(0,8),...cs.slice(-6)].filter((m,i,a)=>a.findIndex(x=>x.code===m.code)===i);
   for(const m of pickRows) L.push(`${m.code} ${m.name}｜${sgn(m.ret,2)}%｜${(m.w*100).toFixed(1)}%｜${m.c>=0?'+':''}${m.c.toFixed(3)}`);
   L.push('\n【相關新聞標題】（主要影響個股的新聞，日期 時間｜個股｜標題｜來源）');
-  if(N&&N.items.length) N.items.slice(0,50).forEach(n=>L.push(`${n.d.slice(0,16)}｜${n.code} ${n.name}｜${n.t}｜${n.s||''}`));
+  if(N&&N.items.length) N.items.slice(0,60).forEach((n,i)=>L.push(`[${i+1}] ${n.d.slice(0,16)}｜${n.code} ${n.name}｜${n.t}｜${n.s||''}`));
   else L.push('（沒有找到相關新聞）');
   L.push('\n請說明這個產業這段期間上漲或下跌的可能原因。');
   return L.join('\n');
@@ -2086,32 +2159,25 @@ async function runIndAI(r,tret){
   if(indAIAbort){ indAIAbort.abort(); return; }
   const key=aiGet(AIK), k=indKey();
   if(!key){ toast('尚未設定 API 金鑰：已改為複製提示詞，可貼到 Claude 對話中'); copyIndPrompt(r,tret); return; }
-  if(!indNews[k]){ indAI[k]={text:'正在收集新聞…',busy:true}; renderDetail(); await loadIndNews(); }
-  const A=indAI[k]={text:'',busy:true}; indAIAbort=new AbortController(); renderDetail();
+  const A=indAI[k]={busy:true}; indAIAbort=new AbortController(); renderDetail();
   try{
+    if(!indNews[k]) await loadIndNews();
+    const N=indNews[k];
     const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',signal:indAIAbort.signal,
       headers:{'content-type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-      body:JSON.stringify({model:aiGet(AIM)||'claude-sonnet-5-5',max_tokens:1500,stream:true,system:IND_AI_SYS,messages:[{role:'user',content:indPrompt(r,tret)}]})});
-    if(!res.ok){ let m=res.status; try{ m=(await res.json()).error?.message||m; }catch(e){} throw new Error(m); }
-    const rd=res.body.getReader(), dec=new TextDecoder(); let buf='';
-    while(true){ const {value,done}=await rd.read(); if(done) break; buf+=dec.decode(value,{stream:true});
-      let i; while((i=buf.indexOf('\n\n'))>=0){ const ev=buf.slice(0,i); buf=buf.slice(i+2);
-        for(const ln of ev.split('\n')) if(ln.startsWith('data:')){ let j; try{ j=JSON.parse(ln.slice(5)); }catch(e){ continue; }
-          if(j.type==='content_block_delta'&&j.delta?.text){ A.text+=j.delta.text; paintIndAI(); }
-          if(j.type==='error') throw new Error(j.error?.message||'API 錯誤'); } } }
-  }catch(e){ A.err=e.name==='AbortError'?'已停止':'AI 呼叫失敗：'+e.message; }
+      body:JSON.stringify({model:aiGet(AIM)||'claude-sonnet-5-5',max_tokens:1500,system:IND_AI_JSON,messages:[{role:'user',content:indPrompt(r,tret)}]})});
+    const j=await res.json(); if(!res.ok) throw new Error(j.error?.message||res.status);
+    const txt=(j.content||[]).map(c=>c.text||'').join(''), m=txt.match(/\{[\s\S]*\}/); if(!m) throw new Error('AI 回覆格式不正確');
+    const o=JSON.parse(m[0]), items=N?N.items.slice(0,60):[];
+    A.sum={headline:o.headline||'',watch:(o.watch||[]).slice(0,2),cards:(o.reasons||[]).slice(0,5).map(x=>({theme:ICO[x.theme]?x.theme:'other',title:String(x.title||''),desc:String(x.desc||''),
+      refs:(x.refs||[]).map(i=>items[i-1]).filter(Boolean),stocks:(x.stocks||[]).map(String),src:'盤後數據（推論）'}))};
+  }catch(e){ A.err=e.name==='AbortError'?'已停止':'AI 整理失敗：'+e.message; }
   finally{ A.busy=false; indAIAbort=null; if(indKey()===k&&indFocus) renderDetail(); }
 }
 async function copyIndPrompt(r,tret){
   try{ if(!indNews[indKey()]) await loadIndNews();
     await navigator.clipboard.writeText(IND_AI_SYS+'\n\n---\n\n'+indPrompt(r,tret)); toast('已複製提示詞，可以貼到 Claude 對話中'); }
   catch(e){ toast('複製失敗：'+e.message); }
-}
-function paintIndAI(){
-  const box=$('indAIBox'), A=indAI[indKey()]; if(!box||!A) return;
-  box.innerHTML=A.text?mdToHtml(A.text)+(A.busy?'<span class="aiCursor">▍</span>':''):(A.busy?'<p class="meta">AI 分析中…</p>':'');
-  if(A.err) box.insertAdjacentHTML('beforeend',`<p class="aiErr">${esc(A.err)}</p>`);
-  box.querySelectorAll('.aiCode').forEach(a=>a.onclick=()=>{ const x=(info.tw||[]).find(q=>q[0]===a.dataset.c); indFocus=false; openSymbol(a.dataset.c,x?{kind:'tw',name:x[1],tag:x[2],cat:x[4]}:{}); });
 }
 function renderIndDetail(){
   const r=indRow(), it=cur(), tab=state.detailTab==='news'?'news':'info';
@@ -2136,23 +2202,21 @@ function renderIndDetail(){
     body=`<div class="indInfo">
       <div class="indBig"><span class="${r.ret>=0?'up':'down'}">${sgn(r.ret,2)}%</span><span class="meta">加權 ${tret!=null?`<span class="${tret>=0?'up':'down'}">${sgn(tret,2)}%</span>`:'—'}・<span class="up">${r.up}</span> 漲 / <span class="down">${r.dn}</span> 跌</span></div>
       <div class="indBr"><i class="up" style="width:${(r.up/Math.max(1,r.up+r.dn)*100).toFixed(0)}%"></i></div>
-      <div class="icH">可能原因（依盤後數據自動整理）</div><ul class="indClue">${indClues(r,tret).map(s=>`<li>${s}</li>`).join('')}</ul>
-      ${N&&N.items.length?`<div class="icH">相關新聞（點「新聞」看全部 ${N.items.length} 則）</div><ul class="indClue">${N.items.slice(0,4).map(n=>`<li><span class="nTag">${n.code} ${esc(n.name)}</span>${escN(n.t)} <span class="meta">${+n.d.slice(5,7)}/${+n.d.slice(8,10)}</span></li>`).join('')}</ul>`
-        :`<div class="meta" style="font-size:11px;margin:6px 0">${N?'主要個股這段期間沒有相關新聞':'正在收集主要個股的新聞…'}</div>`}
+      <div class="icAI"><button id="indAIRun" class="${A?.busy?'':'pri'}">${A?.busy?'AI 整理中…（停止）':A?.sum?'重新 AI 整理':'AI 整理原因'}</button><button id="indAICopy">複製提示詞</button>${hasKey?'':'<span class="meta">未設定 API 金鑰時會改為複製提示詞</span>'}</div>
+      ${A?.err?`<p class="aiErr" style="font-size:12px">${esc(A.err)}</p>`:''}
+      <div class="rsWrap">${A?.sum?sumHtml(r,A.sum,true):sumHtml(r,ruleSummary(r,tret,N),false)}${!N?'<div class="meta" style="font-size:11px;margin:4px 0">正在收集主要個股的新聞，稍後會補上新聞主題…</div>':''}</div>
       <div class="icCols">${pos.length?`<div><div class="icH">拉抬</div>${pos.map(mrow).join('')}</div>`:''}${neg.length?`<div><div class="icH">拖累</div>${neg.map(mrow).join('')}</div>`:''}</div>
       <div class="meta" style="font-size:10.5px;margin-top:2px">右欄 % 為成交金額占產業比重；影響力＝漲跌幅 × 比重（近似）</div>
-      <div class="icAI"><button id="indAIRun" class="${A?.busy?'':'pri'}">${A?.busy?'停止':A?.text?'重新 AI 分析':'AI 分析原因'}</button><button id="indAICopy">複製提示詞</button>${hasKey?'':'<span class="meta">未設定金鑰時，按 AI 分析會改為複製提示詞</span>'}</div>
-      <div class="aiOut indAIBox" id="indAIBox"></div></div>`;
+      </div>`;
   }
   const sc=$('detail').querySelector('.indInfo,.newsList'), keep=sc&&$('detail').dataset.ik===k+tab?sc.scrollTop:0;
   $('detail').innerHTML=tabs+head+body; $('detail').dataset.ik=k+tab;
   if(keep){ const s2=$('detail').querySelector('.indInfo,.newsList'); if(s2) s2.scrollTop=keep; }
   bindDTabs();
   const bk=$('indBack'); if(bk) bk.onclick=()=>{ indFocus=false; renderDetail(); };
-  $('detail').querySelectorAll('.icRow').forEach(el=>el.onclick=()=>{ indFocus=false; openSymbol(el.dataset.c,{kind:'tw',name:el.dataset.n,tag:'上市'}); });
+  $('detail').querySelectorAll('.icRow,.rsStk').forEach(el=>el.onclick=()=>{ indFocus=false; openSymbol(el.dataset.c,{kind:'tw',name:el.dataset.n,tag:'上市'}); });
   const ar=$('indAIRun'); if(ar) ar.onclick=()=>runIndAI(r,tret);
   const ac=$('indAICopy'); if(ac) ac.onclick=()=>copyIndPrompt(r,tret);
-  paintIndAI();
   if(!N) loadIndNews();
   return true;
 }
