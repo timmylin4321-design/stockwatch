@@ -325,6 +325,7 @@
   .rsSrc{font-size:11px;color:var(--muted);text-decoration:none} a.rsSrc:hover{color:var(--text);text-decoration:underline}
   .rsStk{cursor:pointer;margin:0} .rsStk:hover{background:rgba(41,98,255,.3)}
   .rsWatch{font-size:11.5px;color:var(--muted);margin:8px 0 2px;line-height:1.6} .rsWatch b{display:block;color:var(--text);font-weight:600;margin-bottom:2px}
+  .indRetry{background:none;border:1px solid var(--line);color:var(--text);border-radius:4px;padding:1px 8px;font:11px inherit;font-family:inherit;cursor:pointer}
   .tsep{width:24px;height:1px;background:var(--line);margin:6px 0}
   .chartWrap{flex:1;position:relative;min-height:0;min-width:0}
   #chart{position:absolute;inset:0}
@@ -678,9 +679,32 @@ const idb=(()=>{let dbp;
   return {get:k=>tx('readonly',s=>s.get(k)).catch(()=>null),set:(k,v)=>tx('readwrite',s=>s.put(v,k)).catch(()=>{})};
 })();
 const FM='https://api.finmindtrade.com/api/v4/data?';
+/* FinMind 免費版每個 IP 每小時約 300 次；超過會被暫時封鎖（約 30–60 分鐘，期間連股價都讀不到）。
+   這裡統一控管：同時最多 3 個請求、記錄每小時用量、新聞只能用一部分額度，偵測到封鎖就暫停發送，避免越封越久。 */
+const FMB='wl-fm-ban', FML='wl-fm-log', FM_MAX=270, FM_NEWS=170;
+const lsG=k=>{try{return localStorage.getItem(k)}catch(e){return null}}, lsS=(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}};
+let fmFails=0, fmActive=0; const fmQ=[];
+const fmBanLeft=()=>Math.max(0,(+lsG(FMB)||0)-Date.now());
+const fmBanMsg=()=>`FinMind 查詢太頻繁，暫時被限制，約 ${Math.max(1,Math.ceil(fmBanLeft()/60e3))} 分鐘後自動恢復（已載入過的資料仍可查看）`;
+function fmLog(){ const now=Date.now(); let a=[]; try{ a=JSON.parse(lsG(FML)||'[]'); }catch(e){} return a.filter(x=>now-x<3600e3); }
 async function fm(ds,id,sd){
-  const r=await fetch(FM+`dataset=${ds}`+(sd?`&start_date=${sd}`:'')+(id?`&data_id=${encodeURIComponent(id)}`:''));
-  const j=await r.json(); if(j.status!==200) throw new Error(j.msg||('HTTP '+j.status)); return j.data||[];
+  if(fmBanLeft()>0) throw new Error(fmBanMsg());
+  while(fmActive>=3) await new Promise(r=>fmQ.push(r));
+  fmActive++;
+  try{
+    if(fmBanLeft()>0) throw new Error(fmBanMsg());
+    const log=fmLog();
+    if(ds==='TaiwanStockNews'&&log.length>=FM_NEWS) throw new Error('這一小時的新聞查詢額度已用完（保留給股價資料），請稍後再載入');
+    if(log.length>=FM_MAX) throw new Error('這一小時的 FinMind 查詢次數已接近上限，請稍後再試');
+    log.push(Date.now()); lsS(FML,JSON.stringify(log));
+    let r;
+    try{ r=await fetch(FM+`dataset=${ds}`+(sd?`&start_date=${sd}`:'')+(id?`&data_id=${encodeURIComponent(id)}`:'')); }
+    catch(e){ if(++fmFails>=3){ lsS(FMB,String(Date.now()+30*60e3)); throw new Error(fmBanMsg()); } throw new Error('連不上 FinMind（網路不穩或查詢太頻繁）'); }
+    const j=await r.json().catch(()=>({}));
+    if([402,403,429].includes(r.status)||[402,403,429].includes(j.status)){ lsS(FMB,String(Date.now()+((+j.retry_after||3600)*1e3))); throw new Error(fmBanMsg()); }
+    fmFails=0;
+    if(j.status!==200) throw new Error(j.msg||('HTTP '+(j.status||r.status))); return j.data||[];
+  }finally{ fmActive--; const n=fmQ.shift(); if(n) n(); }
 }
 function closeOnly(pairs,prev){ // 只有收盤價的資料：開盤用前一日收盤
   return pairs.filter(([,c])=>c>0).map(([time,c])=>{const o=prev??c;prev=c;
@@ -799,7 +823,7 @@ function drawChart(){
   }
   const st=status[it.sym], co=it.src&&['oil','fx'].includes(it.src.type);
   $('srcTag').textContent=!it.src?'模擬資料（此商品無免費資料來源）':
-    st==='loading'&&!real[it.sym]?'載入歷史資料中…':st==='err'&&!real[it.sym]?'資料載入失敗，請稍後按 ⟳ 重試':
+    st==='loading'&&!real[it.sym]?'載入歷史資料中…':st==='err'&&!real[it.sym]?(fmBanLeft()>0?fmBanMsg():'資料載入失敗，請稍後按 ⟳ 重試'):
     `FinMind 開放資料${shown.length?' · '+shown[0].time.slice(0,4)+' 起':''}${co?' · 僅收盤價':''}${it.src.type==='gold'?' · 近一年':''}`;
   if(document.activeElement!==$('tbSym')) $('tbSym').value=it.sym;
   $('tbAdd').classList.toggle('show',!all().some(x=>x.sym===it.sym));
@@ -988,17 +1012,18 @@ async function loadNews(it,more){
   if(newsBusy[K]) return; newsBusy[K]=true;
   const live=()=>cur()?.sym===it.sym&&state.detailTab==='news'&&(newsAnchor[it.sym]||'')===anchor;
   const base=anchor?new Date(anchor+'T12:00:00'):new Date();
-  const target=C.scanned+(more?30:21);
+  const target=C.scanned+(more?14:10); C.err='';
   try{
     while(C.scanned<target){
       const batch=[];
       for(let k=0;k<4&&C.scanned<target;k++,C.scanned++){ const d=new Date(base); d.setDate(d.getDate()-C.scanned); batch.push(ymdS(d)); }
-      const res=await Promise.all(batch.map(day=>newsDay(id,day).catch(e=>{ C.err=e.message; return []; })));
+      let bad=0; const res=await Promise.all(batch.map(day=>newsDay(id,day).catch(e=>{ C.err=e.message; bad++; return []; })));
+      if(bad){ C.scanned-=batch.length; }                 // 失敗的日子之後再重查，不要當成「沒新聞」
       const seen=new Set(C.items.map(n=>n.t));
       res.flat().forEach(n=>{ const k=n.t.replace(/\s*-\s*[^-]+$/,''); if(!seen.has(n.t)&&!seen.has(k)){ seen.add(n.t); seen.add(k); C.items.push(n); } });
       C.items.sort((a,b)=>a.d<b.d?1:-1);
       if(live()) renderNews(it);
-      if(!more&&C.items.length>=25) break;
+      if(bad||(!more&&C.items.length>=12)) break;
     }
   }finally{ newsBusy[K]=false; }
   if(live()) renderNews(it);
@@ -1024,9 +1049,9 @@ function renderNews(it){
   let lastDay='';
   box.innerHTML=(C.items.length?C.items.map(n=>{ const day=n.d.slice(0,10), head=day!==lastDay?`<div class="newsDay${day===anchor?' anc':''}">${day.replace(/-/g,'/')}${day===anchor?'　← 點選的 K 線':''}</div>`:''; lastDay=day;
       return head+`<a class="newsItem" href="${/^https?:\/\//i.test(n.l||'')?escN(n.l):'#'}" target="_blank" rel="noopener noreferrer"><span class="newsT">${escN(n.t.replace(/\s*-\s*[^-]+$/,''))}</span><span class="newsM">${fmtT(n.d)}・${escN(n.s||'')}</span></a>`; }).join('')
-    :`<div class="newsEmpty">${busy?'載入新聞中…':anchor?`${anchor.replace(/-/g,'/')} 往前 ${C.scanned} 天沒有相關新聞`:`最近 ${C.scanned} 天沒有相關新聞`}</div>`)
-    +`<div class="newsFoot">${busy?`<span>已查 ${C.scanned} 天，繼續載入中…</span>`:`<span>${anchor?'已往前查':'已查最近'} ${C.scanned} 天</span><button id="newsMore">載入更早的新聞</button>`}</div>`
-    +(C.err?`<div class="newsEmpty" style="color:var(--down)">部分日期載入失敗（${escN(C.err)}），可能是查詢次數達到上限，請稍後再試</div>`:'');
+    :`<div class="newsEmpty">${busy?'載入新聞中…':C.err&&!C.scanned?'新聞暫時無法載入':anchor?`${anchor.replace(/-/g,'/')} 往前 ${C.scanned} 天沒有相關新聞`:`最近 ${C.scanned} 天沒有相關新聞`}</div>`)
+    +`<div class="newsFoot">${busy?`<span>已查 ${C.scanned} 天，繼續載入中…</span>`:`<span>${anchor?'已往前查':'已查最近'} ${C.scanned} 天</span><button id="newsMore">${C.err?'重試':'載入更早的新聞'}</button>`}</div>`
+    +(C.err?`<div class="newsEmpty" style="color:var(--down)">${escN(C.err)}</div>`:'');
   if(!busy&&box.dataset.k!==K){ box.scrollTop=0; box.dataset.k=K; }
   const mb=$('newsMore'); if(mb) mb.onclick=()=>loadNews(it,true);
 }
@@ -1590,7 +1615,7 @@ function drawSub(){
   const empty=msg=>{ subData=[]; syncing=true; subHist.setData([]); subLine.setData([]); syncing=false; $('subLegend').textContent=msg; };
   if(!isTwStock(it)) return empty('籌碼資料僅支援台股個股');
   const C=chip[it.sym];
-  if(!C){ loadChip(it); return empty(chipErr[it.sym]?'籌碼資料載入失敗：'+chipErr[it.sym]:'載入籌碼資料中…'); }
+  if(!C){ if(!chipErr[it.sym]||Date.now()-(chipErrAt[it.sym]||0)>120e3) loadChip(it); return empty(chipErr[it.sym]?'籌碼資料載入失敗：'+chipErr[it.sym]:'載入籌碼資料中…'); }
   const line=isLineMode(mode), agg=new Map();
   for(const [d,r] of C){ const v=dayVal(r,mode); if(v==null||isNaN(v)) continue; const k=periodKey(d,state.tf);
     if(line){ const o=agg.get(k); if(!o||o.d<d) agg.set(k,{d,v}); } else agg.set(k,{v:(agg.get(k)?.v||0)+v}); }
@@ -1613,6 +1638,7 @@ function subLegend(time){
   $('subLegend').innerHTML=v==null?`<span style="color:var(--muted)">${b.time} 無資料</span>`
     :`<span style="color:var(--muted)">${b.time}</span>　<span class="${isLineMode(mode)?'':v>=0?'up':'down'}">${isLineMode(mode)?v.toLocaleString('en-US'):fmtZ(v)} ${unit}</span>`;
 }
+var chipErrAt={};
 async function loadChip(it){
   if(chipLoading[it.sym]) return; chipLoading[it.sym]=true;
   const key='chip-'+it.sym, rec=await idb.get(key), m=new Map(rec?rec.rows:[]);
@@ -1634,7 +1660,7 @@ async function loadChip(it){
       for(const r of fr){ if(r.ForeignInvestmentSharesRatio!=null) row(r.date).fr=r.ForeignInvestmentSharesRatio; }
       const sorted=new Map([...m].sort((a,b)=>a[0]<b[0]?-1:1));
       chip[it.sym]=sorted; idb.set(key,{at:Date.now(),rows:[...sorted]}); delete chipErr[it.sym];
-    }catch(e){ if(!m.size) chipErr[it.sym]=e.message; }
+    }catch(e){ if(!m.size){ chipErr[it.sym]=e.message; chipErrAt[it.sym]=Date.now(); } }
   }
   if(!chip[it.sym]&&!chipErr[it.sym]) chip[it.sym]=m;
   chipLoading[it.sym]=false;
@@ -2035,9 +2061,9 @@ function indContrib(r){
 }
 function indKeyStocks(r){
   const cs=indContrib(r), pick=new Map();
-  [...cs].sort((a,b)=>Math.abs(b.c)-Math.abs(a.c)).slice(0,4).forEach(m=>pick.set(m.code,m));
+  [...cs].sort((a,b)=>Math.abs(b.c)-Math.abs(a.c)).slice(0,3).forEach(m=>pick.set(m.code,m));
   const big=cs.filter(m=>m.w>=0.02).sort((a,b)=>Math.abs(b.ret)-Math.abs(a.ret));
-  for(const m of big){ if(pick.size>=6) break; pick.set(m.code,m); }
+  for(const m of big){ if(pick.size>=4) break; pick.set(m.code,m); }
   return [...pick.values()];
 }
 function indClues(r,tret){
@@ -2067,14 +2093,14 @@ async function loadIndNews(){
   indNewsBusy[k]=true;
   try{
     const end=new Date(indDs(indDate)+'T12:00:00'), days=[];
-    let nDays=indPer?Math.min(indPer,7)+1:2;
+    let nDays=indPer?Math.min(indPer,5)+1:2;
     if(!indPer){ const d=new Date(end); d.setDate(d.getDate()-1); while(d.getDay()===0||d.getDay()===6){ d.setDate(d.getDate()-1); nDays++; } } // 當日：一路含到前一個交易日（週一會含週末）
     for(let i=0;i<nDays;i++){ const d=new Date(end); d.setDate(d.getDate()-i); days.push(ymdS(d)); }
     const stocks=indKeyStocks(r), items=[], seen=new Set(); let err='';
     const jobs=[]; for(const m of stocks) for(const day of days) jobs.push([m,day]);
-    const ext=[]; for(let i=days.length;i<8;i++){ const d=new Date(end); d.setDate(d.getDate()-i); ext.push(ymdS(d)); }  // 影響最大的 2 檔多看一週，找背景題材
-    for(const m of stocks.slice(0,2)) for(const day of ext) jobs.push([m,day]);
-    for(let i=0;i<jobs.length;i+=6){
+    const ext=[]; for(let i=days.length;i<6;i++){ const d=new Date(end); d.setDate(d.getDate()-i); ext.push(ymdS(d)); }  // 影響最大的 1 檔多看幾天，找背景題材
+    for(const m of stocks.slice(0,1)) for(const day of ext) jobs.push([m,day]);
+    for(let i=0;i<jobs.length&&!err;i+=6){                 // 一出錯就停，不浪費查詢額度
       const res=await Promise.all(jobs.slice(i,i+6).map(([m,day])=>newsDay(m.code,day).then(v=>v.map(n=>({...n,code:m.code,name:m.name}))).catch(e=>{ err=e.message; return []; })));
       for(const n of res.flat()){ if(/股市爆料同學會|個股概覽|即時報價|股價走勢圖/.test(n.t)) continue;  // 排除論壇貼文與報價頁
         const t=n.t.replace(/\s*-\s*[^-]+$/,''); if(seen.has(t)) continue; seen.add(t); items.push({...n,t}); }
@@ -2194,7 +2220,7 @@ function renderIndDetail(){
           return h+`<a class="newsItem" href="${/^https?:\/\//i.test(n.l||'')?escN(n.l):'#'}" target="_blank" rel="noopener noreferrer"><span class="newsT"><span class="nTag">${n.code} ${esc(n.name)}</span>${escN(n.t)}</span><span class="newsM">${+day.slice(5,7)}/${+day.slice(8)} ${n.d.slice(11,16)}・${escN(n.s||'')}</span></a>`; }).join(''); })()
       :'<div class="newsEmpty">這段期間主要個股沒有相關新聞</div>')
       +(N?`<div class="newsFoot"><span>來源：${N.stocks.map(m=>m.code+' '+esc(m.name)).join('、')}（影響最大的個股）・${N.days.at(-1).slice(5).replace('-','/')}～${N.days[0].slice(5).replace('-','/')}</span></div>`:'')
-      +(N?.err?`<div class="newsEmpty" style="color:var(--down)">部分新聞載入失敗（${escN(N.err)}）</div>`:'')+'</div>';
+      +(N?.err?`<div class="newsEmpty" style="color:var(--down)">${escN(N.err)}　<button class="indRetry">重試</button></div>`:'')+'</div>';
   }else{
     const cs=indContrib(r), pos=cs.filter(m=>m.c>0).sort((a,b)=>b.c-a.c).slice(0,4), neg=cs.filter(m=>m.c<0).sort((a,b)=>a.c-b.c).slice(0,4);
     const mrow=m=>`<div class="icRow" data-c="${m.code}" data-n="${esc(m.name)}"><b>${m.code}</b><span>${esc(m.name)}</span><span class="num ${m.ret>=0?'up':'down'}">${sgn(m.ret,2)}%</span><span class="num meta">${(m.w*100).toFixed(0)}%</span></div>`;
@@ -2204,6 +2230,7 @@ function renderIndDetail(){
       <div class="indBr"><i class="up" style="width:${(r.up/Math.max(1,r.up+r.dn)*100).toFixed(0)}%"></i></div>
       <div class="icAI"><button id="indAIRun" class="${A?.busy?'':'pri'}">${A?.busy?'AI 整理中…（停止）':A?.sum?'重新 AI 整理':'AI 整理原因'}</button><button id="indAICopy">複製提示詞</button>${hasKey?'':'<span class="meta">未設定 API 金鑰時會改為複製提示詞</span>'}</div>
       ${A?.err?`<p class="aiErr" style="font-size:12px">${esc(A.err)}</p>`:''}
+      ${N?.err?`<div class="newsEmpty" style="color:var(--down);text-align:left;padding:4px 0">新聞載入不完整：${escN(N.err)}　<button class="indRetry">重試</button></div>`:''}
       <div class="rsWrap">${A?.sum?sumHtml(r,A.sum,true):sumHtml(r,ruleSummary(r,tret,N),false)}${!N?'<div class="meta" style="font-size:11px;margin:4px 0">正在收集主要個股的新聞，稍後會補上新聞主題…</div>':''}</div>
       <div class="icCols">${pos.length?`<div><div class="icH">拉抬</div>${pos.map(mrow).join('')}</div>`:''}${neg.length?`<div><div class="icH">拖累</div>${neg.map(mrow).join('')}</div>`:''}</div>
       <div class="meta" style="font-size:10.5px;margin-top:2px">右欄 % 為成交金額占產業比重；影響力＝漲跌幅 × 比重（近似）</div>
@@ -2215,6 +2242,7 @@ function renderIndDetail(){
   bindDTabs();
   const bk=$('indBack'); if(bk) bk.onclick=()=>{ indFocus=false; renderDetail(); };
   $('detail').querySelectorAll('.icRow,.rsStk').forEach(el=>el.onclick=()=>{ indFocus=false; openSymbol(el.dataset.c,{kind:'tw',name:el.dataset.n,tag:'上市'}); });
+  $('detail').querySelectorAll('.indRetry').forEach(b=>b.onclick=()=>{ delete indNews[k]; renderDetail(); });
   const ar=$('indAIRun'); if(ar) ar.onclick=()=>runIndAI(r,tret);
   const ac=$('indAICopy'); if(ac) ac.onclick=()=>copyIndPrompt(r,tret);
   if(!N) loadIndNews();
