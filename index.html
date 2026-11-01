@@ -415,6 +415,7 @@
       <button class="tb" id="volBtn">成交量</button>
       <button class="tb" id="subBtn" title="顯示／隱藏籌碼副圖（法人、融資）">籌碼</button>
       <button class="tb" id="divBtn" title="在 K 線底部標示除權息日期（滑鼠移上去看金額）">除權息</button>
+      <button class="tb" id="meetBtn" title="在 K 線底部標示股東會日期（上市公司；滑鼠移上去看停止過戶日等）">股東會</button>
       <div class="sep"></div>
       <button class="tb rg" data-y="0.25">3月</button>
       <button class="tb rg" data-y="1">1年</button>
@@ -2178,8 +2179,41 @@ async function loadDivs(it){
   }catch(e){ if(rec) divData[sym]=rec.ev; else divData[sym]=[]; }
   divLoading[sym]=false;
 }
+/* 股東會日期：由 GitHub Actions 每天從證交所開放資料整理成 meetings.json（上市公司） */
+var meetData=null, meetLoading=false;
+if(state.showMeet===undefined) state.showMeet=true;
+const MEET_URL='https://raw.githubusercontent.com/timmylin4321-design/stockwatch/main/meetings.json';
+async function loadMeetings(){
+  if(meetData||meetLoading) return; meetLoading=true;
+  const rec=await idb.get('meetings');
+  if(rec&&Date.now()-rec.at<6*3600e3){ meetData=rec.v; meetLoading=false; return; }
+  for(const u of [MEET_URL+'?t='+Math.floor(Date.now()/3600e3), 'meetings.json']){
+    try{ const r=await fetch(u,{cache:'no-store'}); if(!r.ok) continue; const j=await r.json(); meetData=j.data||{}; idb.set('meetings',{at:Date.now(),v:meetData}); break; }catch(e){}
+  }
+  if(!meetData) meetData=rec?rec.v:{};
+  meetLoading=false;
+}
+function drawMeets(W,H,today){
+  const it=cur(); if(!state.showMeet||!it||!isTwStock(it)||!shown.length) return;
+  if(!meetData){ loadMeetings(); return; }
+  const list=meetData[it.sym]||[];
+  for(const m of list){
+    const x=lx(tToL(Date.parse(m.d))); if(x==null||x<-10||x>W+10) continue;
+    const y=H-29, w=16, up=m.d>=today, hov=divHover===m;
+    if(hov){ ctx.strokeStyle='rgba(156,107,255,.6)'; ctx.setLineDash([3,3]); ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,y-9); ctx.stroke(); ctx.setLineDash([]); }
+    ctx.fillStyle=up?'#13161e':'#9c6bff'; ctx.strokeStyle='#9c6bff'; ctx.lineWidth=1.2;
+    ctx.beginPath(); ctx.roundRect?ctx.roundRect(x-w/2,y-8,w,16,3):ctx.rect(x-w/2,y-8,w,16); ctx.fill(); ctx.stroke();
+    ctx.fillStyle=up?'#9c6bff':'#fff'; ctx.fillText('會',x,y+0.5);
+    divHits.push({x,y,w,e:m,meet:true});
+  }
+}
 function drawDivs(W,H){
   divHits=[];
+  const today0=new Date().toISOString().slice(0,10);
+  ctx.save(); ctx.beginPath(); ctx.rect(0,0,W,H); ctx.clip();
+  ctx.font='bold 10px -apple-system,"PingFang TC",sans-serif'; ctx.textBaseline='middle'; ctx.textAlign='center';
+  drawMeets(W,H,today0);
+  ctx.restore(); ctx.textAlign='start';
   const it=cur(); if(!state.showDiv||!it||!isTwStock(it)||!shown.length) return;
   const ev=divData[it.sym]; if(!ev){ loadDivs(it); return; }
   const today=new Date().toISOString().slice(0,10);
@@ -2204,6 +2238,12 @@ wrap.addEventListener('pointermove',e=>{
   divHover=h?h.e:null;
   if(!h){ divTip.classList.remove('show'); return; }
   const ev=h.e, it=cur(), dp=it?.dp??2, kindN=ev.kind==='息'?'除息':ev.kind==='權'?'除權':'除權息';
+  if(h.meet){ const up=ev.d>=new Date().toISOString().slice(0,10), num=v=>v?(+v).toFixed(v<1?3:2):'';
+    divTip.textContent=`${up?'即將召開':'已召開'}${ev.t||'股東會'} ${ev.d}`
+      +(ev.s1&&ev.s2?`\n停止過戶 ${ev.s1} ～ ${ev.s2}`:'')
+      +(ev.cash?`\n預擬現金股利 ${num(ev.cash)} 元`:'')+(ev.stk?`\n預擬股票股利 ${num(ev.stk)} 元`:'')
+      +(ev.ann?`\n公告日 ${ev.ann}`:'');
+  } else
   divTip.textContent=ev.done
     ?`${kindN}日 ${ev.date}\n${ev.kind==='權'?'股票股利':'股利'} ${(+ev.amt).toFixed(ev.amt<1?3:2)} 元\n除權息前 ${fmt(ev.before,dp)} → 參考價 ${fmt(ev.after,dp)}`
     :`預計${kindN}日 ${ev.date}（已公告）\n${ev.kind==='權'?'股票股利':'現金股利'} ${(+ev.amt).toFixed(ev.amt<1?3:2)} 元${ev.pay?`\n發放日 ${ev.pay}`:''}${ev.year?`\n${ev.year}`:''}`;
@@ -2213,6 +2253,8 @@ wrap.addEventListener('pointermove',e=>{
 },true);
 wrap.addEventListener('pointerleave',()=>{ divHover=null; divTip.classList.remove('show'); });
 $('divBtn').classList.toggle('on',state.showDiv);
+$('meetBtn').classList.toggle('on',state.showMeet);
+$('meetBtn').onclick=()=>{ state.showMeet=!state.showMeet; saveLocal(); $('meetBtn').classList.toggle('on',state.showMeet); };
 $('divBtn').onclick=()=>{ state.showDiv=!state.showDiv; saveLocal(); $('divBtn').classList.toggle('on',state.showDiv); };
 showPane(state.pane||'wl');
 // 放在網址上時註冊 Service Worker，讓 Chrome 顯示「安裝」圖示（不做快取，重新整理就是新版）
