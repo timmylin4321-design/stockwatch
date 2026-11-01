@@ -297,6 +297,21 @@
   .newsAnc b{color:#8fb0ff} .newsAnc button{background:none;border:1px solid var(--line);color:var(--text);border-radius:4px;padding:2px 8px;font:11px inherit;font-family:inherit;cursor:pointer;white-space:nowrap}
   .newsHint{font-size:11px;color:var(--muted);margin:0 0 2px}
   .newsDay.anc{color:#8fb0ff}
+  .dBack{margin-left:auto !important;font-size:11.5px !important;color:var(--muted)}
+  .nTag{display:inline-block;font-size:10.5px;color:#8fb0ff;background:rgba(41,98,255,.13);border-radius:3px;padding:0 5px;margin-right:6px;vertical-align:1px;white-space:nowrap}
+  .indInfo{max-height:330px;overflow-y:auto;margin:0 -6px;padding:0 6px}
+  .indBig{display:flex;align-items:baseline;gap:10px} .indBig>span:first-child{font-size:26px;font-weight:600}
+  .indBr{height:4px;background:var(--down);border-radius:2px;margin:6px 0 4px;overflow:hidden} .indBr i{display:block;height:100%;background:var(--up)}
+  .icH{font-size:11.5px;color:var(--muted);margin:10px 0 4px}
+  .indClue{margin:0;padding-left:16px;font-size:12.5px;line-height:1.6} .indClue li{margin:2px 0}
+  .icCols{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .icRow{display:grid;grid-template-columns:38px 1fr auto 30px;gap:4px;font-size:12px;padding:3px 2px;cursor:pointer;border-radius:3px}
+  .icRow:hover{background:var(--hover)} .icRow span:nth-child(2){overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+  .icAI{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:10px 0 4px}
+  .icAI button{background:#1a1a1a;border:1px solid var(--line);color:var(--text);border-radius:4px;padding:5px 10px;font:12px inherit;font-family:inherit;cursor:pointer}
+  .icAI button.pri{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+  .icAI .meta{font-size:10.5px}
+  .indAIBox{padding:0 !important;font-size:12.5px !important}
   .tsep{width:24px;height:1px;background:var(--line);margin:6px 0}
   .chartWrap{flex:1;position:relative;min-height:0;min-width:0}
   #chart{position:absolute;inset:0}
@@ -923,6 +938,7 @@ function render(flash={}){
   renderDetail();
 }
 function renderDetail(){
+  if(indFocus&&state.pane==='ind'&&indOpen&&typeof renderIndDetail==='function'&&renderIndDetail()) return;
   const it=cur();
   if(!it){$('detail').innerHTML='<div class="meta">清單是空的</div>';return}
   const cls=it.chg>0?'up':it.chg<0?'down':'';
@@ -975,6 +991,7 @@ async function loadNews(it,more){
   if(live()) renderNews(it);
 }
 function setNewsAnchor(it,day){
+  if(typeof indFocus!=='undefined') indFocus=false;
   if(day&&newsAnchor[it.sym]===day) day='';           // 再點同一根 K 棒＝取消
   if(day) newsAnchor[it.sym]=day; else delete newsAnchor[it.sym];
   if(day&&state.detailTab!=='news'){ state.detailTab='news'; saveLocal(); }
@@ -1184,7 +1201,7 @@ function pick(s){
   openSymbol(s.sym,s);
 }
 function openSymbol(sym,s={}){
-  sym=sym.toUpperCase();
+  sym=sym.toUpperCase(); if(typeof indFocus!=='undefined') indFocus=false;
   draft=null; selId=null;
   if(all().some(x=>x.sym===sym)){ state.sel=sym; save(); render(); drawChart(); updateUI(); return; }
   const src=s.kind?{type:s.kind,id:sym}:guessSrc(sym);
@@ -1726,6 +1743,7 @@ function showPane(p){
   if(p==='chip'){ if(!chipDate&&!chipBusy) chipGo(0); else renderChip(); }
   if(p==='ind'){ if(!indDate&&!indBusy) indGo(0); else renderInd(); }
   if(p==='ai'&&!aiModelsLoaded){ aiModelsLoaded=true; aiModels(); }
+  if(typeof indFocus!=='undefined'&&indFocus) renderDetail();
 }
 document.querySelectorAll('.ptabs button').forEach(b=>b.onclick=()=>showPane(b.dataset.p));
 $('chipPrev').onclick=()=>chipDate&&chipGo(-1);
@@ -1786,7 +1804,7 @@ function sectorStats(d,b){
     let up=0,dn=0; const mem=[];
     for(const code of membersOf(n)){ const p=d.px.get(code); if(!p) continue;
       const bp=b?b.px.get(code):null, r=b?(bp?(p.close/bp.close-1)*100:null):p.pct; if(r==null) continue;
-      r>0?up++:r<0?dn++:0; mem.push({code,name:p.name,close:p.close,ret:r}); }
+      r>0?up++:r<0?dn++:0; mem.push({code,name:p.name,close:p.close,ret:r,val:p.val||0}); }
     mem.sort((x,y)=>y.ret-x.ret);
     rows.push({name:n.replace(/類指數$/,''),full:n,close:v.close,ret,up,dn,mem}); }
   return rows.filter(r=>r.ret!=null).sort((x,y)=>y.ret-x.ret);
@@ -1812,7 +1830,7 @@ function renderInd(){
   const d=indDate&&indDays[indDate]; if(!d){ $('indList').innerHTML='<div class="sgEmpty">'+(indBusy?'載入中…':'沒有資料，按 ⟳ 重試')+'</div>'; return; }
   const bd=indPer?indBase[indDate+'-'+indPer]:null, b=bd?indDays[bd]:null;
   if(indPer&&!b){ $('indList').innerHTML='<div class="sgEmpty">'+(indBusy?'載入中…':'找不到比較基準日的資料')+'</div>'; return; }
-  const rows=sectorStats(d,b), mx=Math.max(1,...rows.map(r=>Math.abs(r.ret)));
+  const rows=sectorStats(d,b); indRows=rows; const mx=Math.max(1,...rows.map(r=>Math.abs(r.ret)));
   const tx=d.sec.get('__TAIEX'), btx=b?.sec.get('__TAIEX'), tret=tx?(b?(btx?(tx.close/btx.close-1)*100:null):tx.pct):null;
   $('indSub').innerHTML=(b?`比較 ${bd.slice(0,4)}/${bd.slice(4,6)}/${bd.slice(6)} → ${indDate.slice(4,6)}/${indDate.slice(6)}`:'當日漲跌')
     +(tret!=null?`　加權指數 <span class="${tret>=0?'up':'down'}">${sgn(tret,2)}%</span>`:'');
@@ -1823,7 +1841,8 @@ function renderInd(){
       <span class="num ${cls}">${sgn(r.ret,2)}%</span><span class="ibr"><span class="up">${r.up}</span>/<span class="down">${r.dn}</span></span></div>`
       +(open?`<div class="imem">${r.mem.slice(0,20).map(m=>`<div class="mrow" data-c="${m.code}" data-n="${esc(m.name)}" data-p="${m.close}"><b>${m.code}</b><span>${esc(m.name)}</span><span class="num">${fmt(m.close,m.close<100?2:m.close<500?1:0)}</span><span class="num ${m.ret>=0?'up':'down'}">${sgn(m.ret,2)}%</span>${laBtn(m.code)}</div>`).join('')}
         ${r.mem.length>20?`<div class="mmore">共 ${r.mem.length} 檔，顯示漲幅前 20</div>`:''}${!r.mem.length?'<div class="mmore">找不到成分股資料</div>':''}</div>`:''); }).join('');
-  $('indList').querySelectorAll('.irow').forEach(el=>el.onclick=()=>{ indOpen=indOpen===el.dataset.s?null:el.dataset.s; renderInd(); });
+  $('indList').querySelectorAll('.irow').forEach(el=>el.onclick=()=>{ const was=indFocus; indOpen=indOpen===el.dataset.s?null:el.dataset.s; indFocus=!!indOpen; renderInd(); if(was&&!indFocus) renderDetail(); });
+  if(indFocus) renderDetail();
   bindLa($('indList'),renderInd);
   $('indList').querySelectorAll('.mrow').forEach(el=>el.onclick=e=>{ e.stopPropagation();
     $('indList').querySelectorAll('.mrow.sel').forEach(x=>x.classList.remove('sel')); el.classList.add('sel');
@@ -1977,6 +1996,166 @@ $('aiModel').onchange=()=>aiSet(AIM,$('aiModel').value);
 if(aiGet(AIM)) $('aiModel').innerHTML=`<option>${esc(aiGet(AIM))}</option>`;
 if(state.aiLast){ showAI(state.aiLast.text,true); $('aiMeta').textContent='上次產生於 '+new Date(state.aiLast.at).toLocaleString('zh-TW',{hour12:false}); }
 let aiModelsLoaded=false;
+
+/* ---------- 產業漲跌原因：點產業後，下方「資訊／新聞」改顯示這個產業 ---------- */
+var indFocus=false, indRows=[], indNews={}, indNewsBusy={}, indAI={}, indAIAbort=null;
+const IND_AI_SYS=`你是台股產業分析助理，使用繁體中文回答。
+任務：根據使用者提供的「類股漲跌、成分股表現、成交金額、新聞標題」，說明這個產業這段期間上漲或下跌的可能原因。
+規則：
+1. 只根據提供的資料推論，不要編造資料裡沒有的新聞、數字或事件；有新聞標題佐證的原因要註明是哪一則（寫出日期與個股）。
+2. 先判斷是「族群普漲／普跌」還是「少數權值股拉抬／拖累」，再說明原因。
+3. 沒有足夠證據的推測要明確寫「推測」；若看不出原因，直接說明資料不足，並建議再確認什麼。
+4. 這是研究參考，不是投資建議，不要給買賣建議。
+5. 股票用「代號 名稱」格式。
+輸出格式（Markdown，精簡，300 字內）：
+### 一句話結論
+### 主要原因
+（2–4 點條列）
+### 需要再確認`;
+const indKey=()=>indOpen?`${indOpen}|${indDate}|${indPer}`:'';
+const indRow=()=>indRows.find(r=>r.full===indOpen)||null;
+const indDs=s=>s?`${s.slice(0,4)}-${s.slice(4,6)}-${s.slice(6)}`:'';
+// 產業內影響力：報酬 × 成交金額占比（近似對類股指數的貢獻）
+function indContrib(r){
+  const tot=r.mem.reduce((s,m)=>s+(m.val||0),0)||1;
+  return r.mem.map(m=>({...m,w:(m.val||0)/tot,c:m.ret*(m.val||0)/tot}));
+}
+function indKeyStocks(r){
+  const cs=indContrib(r), pick=new Map();
+  [...cs].sort((a,b)=>Math.abs(b.c)-Math.abs(a.c)).slice(0,4).forEach(m=>pick.set(m.code,m));
+  const big=cs.filter(m=>m.w>=0.02).sort((a,b)=>Math.abs(b.ret)-Math.abs(a.ret));
+  for(const m of big){ if(pick.size>=6) break; pick.set(m.code,m); }
+  return [...pick.values()];
+}
+function indClues(r,tret){
+  const L=[], n=r.up+r.dn, br=n?r.up/n:0, cs=indContrib(r), dir=r.ret>=0?1:-1;
+  const same=cs.filter(m=>Math.sign(m.c)===dir).sort((a,b)=>Math.abs(b.c)-Math.abs(a.c));
+  const sum=same.reduce((s,m)=>s+Math.abs(m.c),0)||1, top2=same.slice(0,2), share=top2.reduce((s,m)=>s+Math.abs(m.c),0)/sum;
+  const nm=m=>`${m.code} ${esc(m.name)}（<span class="${m.ret>=0?'up':'down'}">${sgn(m.ret,2)}%</span>）`;
+  if(r.ret>=0){
+    if(br>=0.65) L.push(`<b>族群普漲</b>：${r.up} 檔上漲、${r.dn} 檔下跌，資金明顯流入整個產業。`);
+    else if(br<0.45) L.push(`<b>少數個股拉抬</b>：只有 ${r.up} 檔上漲、${r.dn} 檔下跌，類股指數主要靠權值股撐起來。`);
+    else L.push(`漲跌家數接近（${r.up} 漲 / ${r.dn} 跌），漲勢並不全面。`);
+  }else{
+    if(br<=0.35) L.push(`<b>族群普跌</b>：${r.dn} 檔下跌、只有 ${r.up} 檔上漲，賣壓遍及整個產業。`);
+    else if(br>0.55) L.push(`<b>少數個股拖累</b>：其實有 ${r.up} 檔上漲，指數下跌主要是權值股走弱。`);
+    else L.push(`漲跌家數接近（${r.up} 漲 / ${r.dn} 跌），跌勢並不全面。`);
+  }
+  if(top2.length) L.push(`${r.ret>=0?'主要拉抬':'主要拖累'}：${top2.map(nm).join('、')}，約占這個方向影響的 ${Math.round(share*100)}%。`);
+  if(tret!=null){ const d=r.ret-tret;
+    L.push(Math.abs(d)<0.3?`走勢與大盤相近（加權 ${sgn(tret,2)}%），可能主要是跟著大盤。`
+      :(r.ret>=0&&tret<0)?`<b>逆勢上漲</b>：大盤 ${sgn(tret,2)}%，這個產業有自己的利多題材。`
+      :(r.ret<0&&tret>=0)?`<b>逆勢下跌</b>：大盤 ${sgn(tret,2)}%，這個產業有自己的利空因素。`
+      :`${d>0?'強於':'弱於'}大盤 ${Math.abs(d).toFixed(2)} 個百分點（加權 ${sgn(tret,2)}%）。`); }
+  return L;
+}
+async function loadIndNews(){
+  const k=indKey(), r=indRow(); if(!k||!r||indNews[k]||indNewsBusy[k]) return;
+  indNewsBusy[k]=true;
+  try{
+    const end=new Date(indDs(indDate)+'T12:00:00'), days=[];
+    let nDays=indPer?Math.min(indPer,7)+1:2;
+    if(!indPer){ const d=new Date(end); d.setDate(d.getDate()-1); while(d.getDay()===0||d.getDay()===6){ d.setDate(d.getDate()-1); nDays++; } } // 當日：一路含到前一個交易日（週一會含週末）
+    for(let i=0;i<nDays;i++){ const d=new Date(end); d.setDate(d.getDate()-i); days.push(ymdS(d)); }
+    const stocks=indKeyStocks(r), items=[], seen=new Set(); let err='';
+    const jobs=[]; for(const m of stocks) for(const day of days) jobs.push([m,day]);
+    for(let i=0;i<jobs.length;i+=6){
+      const res=await Promise.all(jobs.slice(i,i+6).map(([m,day])=>newsDay(m.code,day).then(v=>v.map(n=>({...n,code:m.code,name:m.name}))).catch(e=>{ err=e.message; return []; })));
+      for(const n of res.flat()){ if(/股市爆料同學會/.test(n.t)) continue;  // 排除論壇貼文
+        const t=n.t.replace(/\s*-\s*[^-]+$/,''); if(seen.has(t)) continue; seen.add(t); items.push({...n,t}); }
+    }
+    items.sort((a,b)=>a.d<b.d?1:-1);
+    indNews[k]={items,stocks,days,err};
+  }finally{ indNewsBusy[k]=false; }
+  if(indKey()===k&&indFocus) renderDetail();
+}
+function indPrompt(r,tret){
+  const N=indNews[indKey()], cs=indContrib(r).sort((a,b)=>b.c-a.c);
+  const L=[`產業：${r.name}（上市類股指數）`,`期間：${indPer?`${(IND_PERS.find(p=>p[0]===indPer)||[])[1]}，至 ${indDs(indDate)}`:indDs(indDate)+' 當日'}`,
+    `類股指數漲跌：${sgn(r.ret,2)}%；加權指數：${tret!=null?sgn(tret,2)+'%':'—'}；上漲 ${r.up} 檔、下跌 ${r.dn} 檔`,
+    '\n【成分股】代號 名稱｜漲跌幅｜成交金額占產業比重｜對類股的影響（報酬×比重）'];
+  const pickRows=[...cs.slice(0,8),...cs.slice(-6)].filter((m,i,a)=>a.findIndex(x=>x.code===m.code)===i);
+  for(const m of pickRows) L.push(`${m.code} ${m.name}｜${sgn(m.ret,2)}%｜${(m.w*100).toFixed(1)}%｜${m.c>=0?'+':''}${m.c.toFixed(3)}`);
+  L.push('\n【相關新聞標題】（主要影響個股的新聞，日期 時間｜個股｜標題｜來源）');
+  if(N&&N.items.length) N.items.slice(0,50).forEach(n=>L.push(`${n.d.slice(0,16)}｜${n.code} ${n.name}｜${n.t}｜${n.s||''}`));
+  else L.push('（沒有找到相關新聞）');
+  L.push('\n請說明這個產業這段期間上漲或下跌的可能原因。');
+  return L.join('\n');
+}
+async function runIndAI(r,tret){
+  if(indAIAbort){ indAIAbort.abort(); return; }
+  const key=aiGet(AIK), k=indKey();
+  if(!key){ toast('尚未設定 API 金鑰：已改為複製提示詞，可貼到 Claude 對話中'); copyIndPrompt(r,tret); return; }
+  if(!indNews[k]){ indAI[k]={text:'正在收集新聞…',busy:true}; renderDetail(); await loadIndNews(); }
+  const A=indAI[k]={text:'',busy:true}; indAIAbort=new AbortController(); renderDetail();
+  try{
+    const res=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',signal:indAIAbort.signal,
+      headers:{'content-type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+      body:JSON.stringify({model:aiGet(AIM)||'claude-sonnet-5-5',max_tokens:1500,stream:true,system:IND_AI_SYS,messages:[{role:'user',content:indPrompt(r,tret)}]})});
+    if(!res.ok){ let m=res.status; try{ m=(await res.json()).error?.message||m; }catch(e){} throw new Error(m); }
+    const rd=res.body.getReader(), dec=new TextDecoder(); let buf='';
+    while(true){ const {value,done}=await rd.read(); if(done) break; buf+=dec.decode(value,{stream:true});
+      let i; while((i=buf.indexOf('\n\n'))>=0){ const ev=buf.slice(0,i); buf=buf.slice(i+2);
+        for(const ln of ev.split('\n')) if(ln.startsWith('data:')){ let j; try{ j=JSON.parse(ln.slice(5)); }catch(e){ continue; }
+          if(j.type==='content_block_delta'&&j.delta?.text){ A.text+=j.delta.text; paintIndAI(); }
+          if(j.type==='error') throw new Error(j.error?.message||'API 錯誤'); } } }
+  }catch(e){ A.err=e.name==='AbortError'?'已停止':'AI 呼叫失敗：'+e.message; }
+  finally{ A.busy=false; indAIAbort=null; if(indKey()===k&&indFocus) renderDetail(); }
+}
+async function copyIndPrompt(r,tret){
+  try{ if(!indNews[indKey()]) await loadIndNews();
+    await navigator.clipboard.writeText(IND_AI_SYS+'\n\n---\n\n'+indPrompt(r,tret)); toast('已複製提示詞，可以貼到 Claude 對話中'); }
+  catch(e){ toast('複製失敗：'+e.message); }
+}
+function paintIndAI(){
+  const box=$('indAIBox'), A=indAI[indKey()]; if(!box||!A) return;
+  box.innerHTML=A.text?mdToHtml(A.text)+(A.busy?'<span class="aiCursor">▍</span>':''):(A.busy?'<p class="meta">AI 分析中…</p>':'');
+  if(A.err) box.insertAdjacentHTML('beforeend',`<p class="aiErr">${esc(A.err)}</p>`);
+  box.querySelectorAll('.aiCode').forEach(a=>a.onclick=()=>{ const x=(info.tw||[]).find(q=>q[0]===a.dataset.c); indFocus=false; openSymbol(a.dataset.c,x?{kind:'tw',name:x[1],tag:x[2],cat:x[4]}:{}); });
+}
+function renderIndDetail(){
+  const r=indRow(), it=cur(), tab=state.detailTab==='news'?'news':'info';
+  if(!r){ indFocus=false; return false; }
+  const d=indDays[indDate], b=indPer?indDays[indBase[indDate+'-'+indPer]]:null;
+  const tx=d?.sec.get('__TAIEX'), btx=b?.sec.get('__TAIEX'), tret=tx?(b?(btx?(tx.close/btx.close-1)*100:null):tx.pct):null;
+  const per=indPer?(IND_PERS.find(p=>p[0]===indPer)||[])[1]:'當日', k=indKey(), N=indNews[k];
+  const tabs=`<div class="dTabs"><button data-t="info" class="${tab==='info'?'on':''}">資訊</button><button data-t="news" class="${tab==='news'?'on':''}">新聞</button>${it?`<button class="dBack" id="indBack">← 回到 ${esc(it.sym)}</button>`:''}</div>`;
+  const head=`<div class="dh"><span class="logo" style="background:${r.ret>=0?'var(--up)':'var(--down)'}">產</span><b>${esc(r.name)}</b><span class="meta">${per}・${indDs(indDate).replace(/-/g,'/')}</span></div>`;
+  let body;
+  if(tab==='news'){
+    body=`<div class="newsList">`+(!N?'<div class="newsEmpty">正在收集主要個股的新聞…</div>'
+      :N.items.length?(()=>{ let last=''; return N.items.map(n=>{ const day=n.d.slice(0,10), h=day!==last?`<div class="newsDay">${day.replace(/-/g,'/')}</div>`:''; last=day;
+          return h+`<a class="newsItem" href="${/^https?:\/\//i.test(n.l||'')?escN(n.l):'#'}" target="_blank" rel="noopener noreferrer"><span class="newsT"><span class="nTag">${n.code} ${esc(n.name)}</span>${escN(n.t)}</span><span class="newsM">${+day.slice(5,7)}/${+day.slice(8)} ${n.d.slice(11,16)}・${escN(n.s||'')}</span></a>`; }).join(''); })()
+      :'<div class="newsEmpty">這段期間主要個股沒有相關新聞</div>')
+      +(N?`<div class="newsFoot"><span>來源：${N.stocks.map(m=>m.code+' '+esc(m.name)).join('、')}（影響最大的個股）・${N.days.at(-1).slice(5).replace('-','/')}～${N.days[0].slice(5).replace('-','/')}</span></div>`:'')
+      +(N?.err?`<div class="newsEmpty" style="color:var(--down)">部分新聞載入失敗（${escN(N.err)}）</div>`:'')+'</div>';
+  }else{
+    const cs=indContrib(r), pos=cs.filter(m=>m.c>0).sort((a,b)=>b.c-a.c).slice(0,4), neg=cs.filter(m=>m.c<0).sort((a,b)=>a.c-b.c).slice(0,4);
+    const mrow=m=>`<div class="icRow" data-c="${m.code}" data-n="${esc(m.name)}"><b>${m.code}</b><span>${esc(m.name)}</span><span class="num ${m.ret>=0?'up':'down'}">${sgn(m.ret,2)}%</span><span class="num meta">${(m.w*100).toFixed(0)}%</span></div>`;
+    const A=indAI[k], hasKey=!!aiGet(AIK);
+    body=`<div class="indInfo">
+      <div class="indBig"><span class="${r.ret>=0?'up':'down'}">${sgn(r.ret,2)}%</span><span class="meta">加權 ${tret!=null?`<span class="${tret>=0?'up':'down'}">${sgn(tret,2)}%</span>`:'—'}・<span class="up">${r.up}</span> 漲 / <span class="down">${r.dn}</span> 跌</span></div>
+      <div class="indBr"><i class="up" style="width:${(r.up/Math.max(1,r.up+r.dn)*100).toFixed(0)}%"></i></div>
+      <div class="icH">可能原因（依盤後數據自動整理）</div><ul class="indClue">${indClues(r,tret).map(s=>`<li>${s}</li>`).join('')}</ul>
+      ${N&&N.items.length?`<div class="icH">相關新聞（點「新聞」看全部 ${N.items.length} 則）</div><ul class="indClue">${N.items.slice(0,4).map(n=>`<li><span class="nTag">${n.code} ${esc(n.name)}</span>${escN(n.t)} <span class="meta">${+n.d.slice(5,7)}/${+n.d.slice(8,10)}</span></li>`).join('')}</ul>`
+        :`<div class="meta" style="font-size:11px;margin:6px 0">${N?'主要個股這段期間沒有相關新聞':'正在收集主要個股的新聞…'}</div>`}
+      <div class="icCols">${pos.length?`<div><div class="icH">拉抬</div>${pos.map(mrow).join('')}</div>`:''}${neg.length?`<div><div class="icH">拖累</div>${neg.map(mrow).join('')}</div>`:''}</div>
+      <div class="meta" style="font-size:10.5px;margin-top:2px">右欄 % 為成交金額占產業比重；影響力＝漲跌幅 × 比重（近似）</div>
+      <div class="icAI"><button id="indAIRun" class="${A?.busy?'':'pri'}">${A?.busy?'停止':A?.text?'重新 AI 分析':'AI 分析原因'}</button><button id="indAICopy">複製提示詞</button>${hasKey?'':'<span class="meta">未設定金鑰時，按 AI 分析會改為複製提示詞</span>'}</div>
+      <div class="aiOut indAIBox" id="indAIBox"></div></div>`;
+  }
+  const sc=$('detail').querySelector('.indInfo,.newsList'), keep=sc&&$('detail').dataset.ik===k+tab?sc.scrollTop:0;
+  $('detail').innerHTML=tabs+head+body; $('detail').dataset.ik=k+tab;
+  if(keep){ const s2=$('detail').querySelector('.indInfo,.newsList'); if(s2) s2.scrollTop=keep; }
+  bindDTabs();
+  const bk=$('indBack'); if(bk) bk.onclick=()=>{ indFocus=false; renderDetail(); };
+  $('detail').querySelectorAll('.icRow').forEach(el=>el.onclick=()=>{ indFocus=false; openSymbol(el.dataset.c,{kind:'tw',name:el.dataset.n,tag:'上市'}); });
+  const ar=$('indAIRun'); if(ar) ar.onclick=()=>runIndAI(r,tret);
+  const ac=$('indAICopy'); if(ac) ac.onclick=()=>copyIndPrompt(r,tret);
+  paintIndAI();
+  if(!N) loadIndNews();
+  return true;
+}
 
 /* ---------- 庫存損益 ---------- */
 if(!state.portfolio) state.portfolio=[];          // [{id,sym,name,src,price,shares,date}]
