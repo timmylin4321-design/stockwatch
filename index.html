@@ -4,6 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>觀察清單 K線</title>
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0f0f0f">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
 <style>
   :root{
     --bg:#0f0f0f; --panel:#131313; --line:#2a2a2a; --hover:#1e1e1e; --sel:#1c2230;
@@ -2210,6 +2215,8 @@ wrap.addEventListener('pointerleave',()=>{ divHover=null; divTip.classList.remov
 $('divBtn').classList.toggle('on',state.showDiv);
 $('divBtn').onclick=()=>{ state.showDiv=!state.showDiv; saveLocal(); $('divBtn').classList.toggle('on',state.showDiv); };
 showPane(state.pane||'wl');
+// 放在網址上時註冊 Service Worker，讓 Chrome 顯示「安裝」圖示（不做快取，重新整理就是新版）
+if(location.protocol==='https:'&&'serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
 /* ---------- 股票比較（疊加其他商品，價格軸改成百分比）----------
    比較是「成對」記錄的：在 A 的圖上加入 B，就記成 A↔B。
    看 A 或 B 時才會出現對方的比較線；換到不相關的股票不顯示，但配對會保留，回來時再出現。 */
