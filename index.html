@@ -401,6 +401,8 @@
   .asMenu{position:absolute;right:8px;top:44px;z-index:30;background:#1e222d;border:1px solid #363a45;border-radius:6px;
     box-shadow:0 8px 24px rgba(0,0,0,.5);min-width:250px;padding:6px 0;display:none}
   .asMenu.show{display:block}
+  #gsMenu input{background:#131722;border:1px solid #363a45;color:var(--text);border-radius:4px;padding:6px 8px;font:12px inherit;font-family:inherit;box-sizing:border-box}
+  #gsBtn.on{color:#22ab94}
   .asMenu button{display:block;width:100%;text-align:left;background:none;border:0;color:var(--text);padding:8px 14px;font:inherit;cursor:pointer}
   .asMenu button:hover{background:#2a2e39}
   .asMenu .note{padding:6px 14px 8px;color:var(--muted);font-size:12px;line-height:1.5}
@@ -497,9 +499,10 @@
 
   <aside class="panel">
     <header>
-      <h1>觀察清單 <span class="asStat" id="asStat"></span></h1>
+      <h1>觀察清單 <span class="asStat" id="asStat"></span><span class="asStat" id="gsStat"></span></h1>
       <button class="ibtn" id="asBtn" title="自動儲存到檔案"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7V4M8 20v-6h8v6"/></svg></button>
-      <div class="asMenu" id="asMenu"></div>
+      <button class="ibtn" id="gsBtn" title="Google 帳號同步（電腦、手機共用）"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M7 18h10.5a4 4 0 0 0 .4-8 6 6 0 0 0-11.6 1.6A3.3 3.3 0 0 0 7 18z"/><path d="M10 13.5l2-2 2 2M12 11.5V16"/></svg></button>
+      <div class="asMenu" id="asMenu"></div><div class="asMenu" id="gsMenu"></div>
       <button class="ibtn" id="addBtn" title="新增商品">＋</button>
       <button class="ibtn" id="expBtn" title="匯出備份（清單、畫線、設定）"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M12 4v11M7 10l5 5 5-5M5 19h14"/></svg></button>
       <button class="ibtn" id="impBtn" title="匯入備份"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M12 15V4M7 9l5-5 5 5M5 19h14"/></svg></button>
@@ -631,7 +634,7 @@ let sort={k:null,dir:1};
 let fsHandle=null, fsPerm='none', lastWrite=null, wTimer=null;
 const saveLocal=()=>{try{localStorage.setItem(KEY,JSON.stringify(state))}catch(e){}};
 // user=true：使用者的修改（會更新時間戳並寫入自動儲存檔）；false：只是報價更新
-const save=(user=true)=>{ if(user){ state.editedAt=Date.now(); scheduleWrite(); } saveLocal(); };
+const save=(user=true)=>{ if(user){ state.editedAt=Date.now(); scheduleWrite(); if(typeof gsSchedule==='function') gsSchedule(); } saveLocal(); };
 const $=id=>document.getElementById(id);
 const fmt=(v,d)=>v.toLocaleString('en-US',{minimumFractionDigits:d,maximumFractionDigits:d});
 const sgn=(v,d)=>(v>0?'+':v<0?'−':'')+fmt(Math.abs(v),d);
@@ -1151,6 +1154,110 @@ $('asStat').onclick=async()=>{
   setStatus(); if(fsPerm==='granted') syncFromFile();
 })();
 window.addEventListener('beforeunload',()=>{ if(wTimer){ clearTimeout(wTimer); writeFile(); } });
+
+/* ---------- Google 帳號同步（存到你 Google 雲端硬碟的「應用程式資料」隱藏資料夾） ---------- */
+const GCLIENT_BUILTIN='';                                   // OAuth 用戶端 ID（xxx.apps.googleusercontent.com）
+const GS_SCOPE='https://www.googleapis.com/auth/drive.appdata', GS_FILE='stockwatch-sync.json';
+const gsCid=()=>GCLIENT_BUILTIN||lsG('wl-gs-cid')||'';
+var gs={linked:lsG('wl-gs')==='1', tok:null, exp:0, fileId:null, busy:false, last:null, pending:false, err:'', timer:null, client:null, email:''};
+try{ const t=JSON.parse(lsG('wl-gs-tok')||'null'); if(t&&t.exp>Date.now()+60e3){ gs.tok=t.t; gs.exp=t.exp; } }catch(e){}
+gs.last=+lsG('wl-gs-last')||null;
+const gsTokOk=()=>gs.tok&&gs.exp>Date.now()+60e3;
+function gsLoadLib(){
+  if(window.google?.accounts?.oauth2) return Promise.resolve();
+  return gsLoadLib.p||(gsLoadLib.p=new Promise((ok,no)=>{ const s=document.createElement('script'); s.src='https://accounts.google.com/gsi/client'; s.async=true;
+    s.onload=()=>ok(); s.onerror=()=>{ gsLoadLib.p=null; no(new Error('無法載入 Google 登入元件')); }; document.head.appendChild(s); }));
+}
+// 必須由使用者點擊觸發（Google 會開一個小視窗；第一次要按同意，之後通常一閃即關）
+async function gsAuth(first){
+  const cid=gsCid(); if(!cid) throw new Error('尚未設定 Google 用戶端 ID');
+  await gsLoadLib();
+  return new Promise((ok,no)=>{
+    const c=google.accounts.oauth2.initTokenClient({client_id:cid,scope:GS_SCOPE,
+      callback:r=>{ if(r.error){ no(new Error(r.error_description||r.error)); return; }
+        gs.tok=r.access_token; gs.exp=Date.now()+(+r.expires_in||3600)*1e3; lsS('wl-gs-tok',JSON.stringify({t:gs.tok,exp:gs.exp})); ok(); },
+      error_callback:e=>no(new Error(e.type==='popup_closed'?'登入視窗被關閉了':e.type==='popup_failed_to_open'?'瀏覽器擋住了登入視窗，請允許彈出視窗':(e.message||e.type)))});
+    c.requestAccessToken({prompt:first?'consent':''});
+  });
+}
+async function gapi(url,opt={}){
+  const r=await fetch(url,{...opt,headers:{...(opt.headers||{}),Authorization:'Bearer '+gs.tok}});
+  if(r.status===401){ gs.tok=null; lsS('wl-gs-tok','null'); throw Object.assign(new Error('Google 登入已過期'),{auth:true}); }
+  if(!r.ok){ let m=r.status; try{ m=(await r.json()).error?.message||m; }catch(e){} throw new Error('Google Drive：'+m); }
+  return r;
+}
+async function gsFind(){
+  if(gs.fileId) return gs.fileId;
+  const q=encodeURIComponent(`name='${GS_FILE}'`);
+  const j=await (await gapi(`https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&q=${q}&fields=files(id,modifiedTime)&orderBy=modifiedTime desc`)).json();
+  return gs.fileId=j.files?.[0]?.id||null;
+}
+async function gsRead(){ const id=await gsFind(); if(!id) return null;
+  const j=await (await gapi(`https://www.googleapis.com/drive/v3/files/${id}?alt=media`)).json(); const s=j.state||j; return Array.isArray(s?.data)?s:null; }
+async function gsWrite(){
+  const body=payload(), id=await gsFind();
+  if(id) await gapi(`https://www.googleapis.com/upload/drive/v3/files/${id}?uploadType=media`,{method:'PATCH',headers:{'Content-Type':'application/json'},body});
+  else { const b='gs'+Date.now(), meta=JSON.stringify({name:GS_FILE,parents:['appDataFolder']});
+    const j=await (await gapi('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id',{method:'POST',headers:{'Content-Type':'multipart/related; boundary='+b},
+      body:`--${b}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${meta}\r\n--${b}\r\nContent-Type: application/json\r\n\r\n${body}\r\n--${b}--`})).json();
+    gs.fileId=j.id; }
+  gs.pending=false; gs.last=Date.now(); lsS('wl-gs-last',String(gs.last));
+}
+// 比對雲端與本機的修改時間：雲端較新就載入，本機較新就上傳
+async function gsSync(opt={}){
+  if(!gs.linked||!gsTokOk()||gs.busy) { gsStat(); return; }
+  gs.busy=true; gs.err=''; gsStat();
+  try{
+    const s=await gsRead(), rt=s?.editedAt||0, lt=state.editedAt||0;
+    if(s&&opt.first&&lt&&rt&&lt>rt&&!confirm('這台裝置的資料比 Google 上的還新。\n\n按「確定」：用這台裝置的資料覆蓋 Google 上的\n按「取消」：改為下載 Google 上的資料')){ applyState(s); toast('已從 Google 載入資料'); }
+    else if(s&&(rt>lt||(opt.first&&!lt))){ applyState(s); toast('已從 Google 同步較新的內容'); }
+    else if(!s||lt>rt||gs.pending) await gsWrite();
+    gs.last=Date.now(); lsS('wl-gs-last',String(gs.last));
+  }catch(e){ gs.err=e.message; if(e.auth) gs.pending=true; console.warn(e); }
+  gs.busy=false; gsStat();
+}
+function gsSchedule(){ if(!gs.linked) return; gs.pending=true; clearTimeout(gs.timer);
+  if(gsTokOk()) gs.timer=setTimeout(async()=>{ if(gs.busy){ gsSchedule(); return; } gs.busy=true; gsStat();
+    try{ await gsWrite(); gs.err=''; }catch(e){ gs.err=e.message; console.warn(e); } gs.busy=false; gsStat(); },2500);
+  gsStat(); }
+function gsStat(){
+  const el=$('gsStat'), b=$('gsBtn'); if(!el) return;
+  b.classList.toggle('on',gs.linked&&gsTokOk()&&!gs.err);
+  if(!gs.linked){ el.textContent=''; el.className='asStat'; return; }
+  const hm=t=>new Date(t).toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit',hour12:false});
+  if(gs.busy){ el.className='asStat ok'; el.textContent='☁ 同步中…'; }
+  else if(!gsTokOk()){ el.className='asStat warn'; el.textContent=gs.pending?'☁ 有變更未同步，點此同步':'☁ 點此同步'; el.title='Google 登入每小時會過期，點一下就會重新連線並同步'; }
+  else if(gs.err){ el.className='asStat warn'; el.textContent='☁ 同步失敗，點此重試'; el.title=gs.err; }
+  else if(gs.pending){ el.className='asStat ok'; el.textContent='☁ 等待同步…'; }
+  else { el.className='asStat ok'; el.textContent='☁ 已同步'+(gs.last?' '+hm(gs.last):''); el.title='已和 Google 帳號同步'; }
+}
+async function gsConnect(first){
+  try{ await gsAuth(first); if(first){ gs.linked=true; lsS('wl-gs','1'); } await gsSync({first}); if(first&&!gs.err) toast('已開啟 Google 帳號同步'); }
+  catch(e){ gs.err=e.message; toast('Google 同步：'+e.message); }
+  gsStat();
+}
+function gsMenu(){
+  const m=$('gsMenu'), cid=gsCid();
+  m.innerHTML=!cid?`<div class="note">尚未設定 Google 用戶端 ID。<br>貼上在 Google Cloud 建立的 ID：</div><div style="padding:0 14px 10px"><input id="gsCidIn" placeholder="xxxx.apps.googleusercontent.com" style="width:100%"></div><button data-a="cid">儲存 ID</button>`
+    :gs.linked?`<div class="note">已開啟 Google 帳號同步。<br>資料存在你 Google 雲端硬碟的應用程式資料夾（只有這個網站讀得到）。${gs.err?`<br><span style="color:#f7c548">${esc(gs.err)}</span>`:''}</div><button data-a="now">立即同步</button><button data-a="off">在這台裝置停止同步</button>`
+    :`<div class="note">用 Google 帳號在電腦、手機之間同步觀察清單、趨勢線、庫存損益等內容。<br>（AI 金鑰不會同步）</div><button data-a="on">用 Google 帳號登入並開始同步</button>`;
+  m.querySelectorAll('button').forEach(b=>b.onclick=async e=>{ e.stopPropagation(); m.classList.remove('show'); const a=b.dataset.a;
+    if(a==='cid'){ const v=$('gsCidIn').value.trim(); if(!/\.apps\.googleusercontent\.com$/.test(v)) return toast('ID 格式不對，應該是 xxx.apps.googleusercontent.com'); lsS('wl-gs-cid',v); toast('已儲存，接著點「用 Google 帳號登入」'); gsMenu(); return; }
+    if(a==='on') gsConnect(true);
+    if(a==='now'){ if(gsTokOk()) gsSync(); else gsConnect(false); }
+    if(a==='off'){ gs.linked=false; gs.tok=null; lsS('wl-gs','0'); lsS('wl-gs-tok','null'); gsStat(); toast('這台裝置已停止 Google 同步（雲端資料保留）'); }
+  });
+  const ci=m.querySelector('#gsCidIn'); if(ci) ci.onclick=e=>e.stopPropagation();
+  m.classList.add('show');
+}
+$('gsBtn').onclick=e=>{ e.stopPropagation(); if($('gsMenu').classList.contains('show')) $('gsMenu').classList.remove('show'); else gsMenu(); };
+document.addEventListener('click',e=>{ if(!$('gsMenu').contains(e.target)) $('gsMenu').classList.remove('show'); });
+$('gsStat').onclick=()=>{ if(!gs.linked||gs.busy) return; if(gsTokOk()) gsSync(); else gsConnect(false); };
+document.addEventListener('visibilitychange',()=>{ if(!gsTokOk()) return;
+  if(document.visibilityState==='visible') gsSync();                     
+  else if(gs.pending&&!gs.busy){ clearTimeout(gs.timer); gsWrite().catch(()=>{}); } });  // 離開前把還沒上傳的變更送出
+setInterval(()=>{ if(document.visibilityState==='visible'&&gsTokOk()&&!gs.pending) gsSync(); },5*60e3);
+gsStat(); if(gs.linked&&gsTokOk()) gsSync();
 
 /* ---------- 備份：匯出／匯入（清單、各股畫線、圖表設定） ---------- */
 const toastEl=document.createElement('div'); toastEl.className='toast'; document.body.appendChild(toastEl);
