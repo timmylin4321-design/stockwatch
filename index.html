@@ -1156,7 +1156,7 @@ $('asStat').onclick=async()=>{
 window.addEventListener('beforeunload',()=>{ if(wTimer){ clearTimeout(wTimer); writeFile(); } });
 
 /* ---------- Google 帳號同步（存到你 Google 雲端硬碟的「應用程式資料」隱藏資料夾） ---------- */
-const GCLIENT_BUILTIN='';                                   // OAuth 用戶端 ID（xxx.apps.googleusercontent.com）
+const GCLIENT_BUILTIN='423652789087-duq3261u3pu9qc8eus88n1vd755po1f0.apps.googleusercontent.com';                                   // OAuth 用戶端 ID（xxx.apps.googleusercontent.com）
 const GS_SCOPE='https://www.googleapis.com/auth/drive.appdata', GS_FILE='stockwatch-sync.json';
 const gsCid=()=>GCLIENT_BUILTIN||lsG('wl-gs-cid')||'';
 var gs={linked:lsG('wl-gs')==='1', tok:null, exp:0, fileId:null, busy:false, last:null, pending:false, err:'', timer:null, client:null, email:''};
