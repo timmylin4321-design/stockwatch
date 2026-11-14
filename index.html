@@ -435,6 +435,46 @@
     .panel{width:100%;height:auto}
     .list{max-height:none}
   }
+
+  /* ---------- 手機版排版（寬度 820px 以下）：下方分頁列切換 K 線／清單／產業／籌碼／庫存／AI ---------- */
+  .mnav,.monly{display:none}
+  body.mob{padding-bottom:calc(58px + env(safe-area-inset-bottom))}
+  body.mob .app{flex-direction:column;height:auto;min-height:0}
+  body.mob .monly{display:inline-block}
+  body.mob .mnav{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:80;background:#151515;border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
+  .mnav button{flex:1;background:none;border:0;color:var(--muted);padding:6px 0 7px;font:11px inherit;font-family:inherit;display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer}
+  .mnav svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}
+  .mnav button.on{color:var(--accent)}
+  body.mob .ptabs{display:none}
+  body.mob .panel{width:100%;height:auto;overflow:visible;border:0}
+  body.mob .pane{min-height:0}
+  body.mob .list{max-height:none;overflow:visible}
+  body.mob .chartArea{height:74svh;min-height:420px;border-right:0;border-bottom:1px solid var(--line)}
+  body.mob .toolbar{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;padding:6px 8px;gap:2px}
+  body.mob .toolbar::-webkit-scrollbar{display:none}
+  body.mob .toolbar>*{flex:none}
+  body.mob .tb{padding:7px 9px;font-size:13.5px}
+  body.mob .toolbar .symbox{width:96px;font-size:16px}
+  body.mob .toolbar .symbox:focus{width:150px}
+  body.mob .sugg{position:fixed;left:8px;right:8px;top:52px;width:auto;max-height:55svh}
+  body.mob .tools{display:none}
+  body.mob.mtools .tools{display:flex}
+  body.mob .subWrap{height:120px}
+  body.mob .detail{padding:12px 14px 16px}
+  body.mob .newsList,body.mob .indInfo{max-height:none}
+  body.mob .row{min-height:48px}
+  /* K 線頁：只留圖表＋下方資訊／新聞 */
+  body.mob[data-mv=chart] .panel>header,body.mob[data-mv=chart] .acct,body.mob[data-mv=chart] .pane{display:none!important}
+  /* 清單類頁：隱藏圖表 */
+  body.mob:not([data-mv=chart]):not([data-mv=pf]) .chartArea{display:none}
+  body.mob:not([data-mv=chart]):not([data-mv=ind]) .detail{display:none}
+  body.mob[data-mv=ind] .detail:not(:has(#indBack)){display:none}
+  body.mob:not([data-mv=wl]) .panel>header,body.mob:not([data-mv=wl]) .acct{display:none}
+  /* 庫存頁：上方顯示資產儀表板，下方是持股明細 */
+  body.mob[data-mv=pf] .chartArea{height:auto;min-height:0}
+  body.mob[data-mv=pf] .toolbar,body.mob[data-mv=pf] .chartBody{display:none}
+  body.mob[data-mv=pf] .pfDash{position:static;padding:12px}
+  body.mob .gLogin{padding:10px}
 </style>
 </head>
 <body>
@@ -466,6 +506,7 @@
       <button class="tb ma" data-ma="5">MA5</button>
       <button class="tb ma" data-ma="20">MA20</button>
       <button class="tb ma" data-ma="60">MA60</button>
+      <button class="tb monly" id="mDrawBtn">畫線</button>
       <button class="tb" id="bbBtn" title="布林通道（20 日，±2 標準差）">布林</button>
       <button class="tb" id="volBtn">成交量</button>
       <button class="tb" id="indBtn" title="技術指標副圖（MACD、KD、RSI）">指標</button>
@@ -596,6 +637,14 @@
   </aside>
 </div>
 
+<nav class="mnav" id="mnav">
+  <button data-v="chart"><svg viewBox="0 0 24 24"><path d="M7 4v16M17 4v16"/><rect x="4.5" y="8" width="5" height="7" rx="1"/><rect x="14.5" y="6" width="5" height="9" rx="1"/></svg><span>K線</span></button>
+  <button data-v="wl"><svg viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/></svg><span>清單</span></button>
+  <button data-v="ind"><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg><span>產業</span></button>
+  <button data-v="chip"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3"/><circle cx="17" cy="9.5" r="2.4"/><path d="M3.5 19c.6-3.4 2.8-5 5.5-5s4.9 1.6 5.5 5M14.5 15c2.6-.6 5 .6 5.8 4"/></svg><span>籌碼</span></button>
+  <button data-v="pf"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M8 6V4h8v2"/></svg><span>庫存</span></button>
+  <button data-v="ai"><svg viewBox="0 0 24 24"><path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z"/><path d="M18 15l.8 2.2L21 18l-2.2.8L18 21l-.8-2.2L15 18l2.2-.8z"/></svg><span>AI</span></button>
+</nav>
 <script>/*!
  * @license
  * TradingView Lightweight Charts™ v4.1.3
@@ -980,7 +1029,7 @@ function render(flash={}){
         <div class="num ${cls}">${sgn(it.chg,it.dp)}</div>
         <div class="num ${cls}">${sgn(pct(it),2)}%</div>
         <button class="del" title="移除">×</button>`;
-      r.onclick=()=>{state.sel=it.sym;draft=null;selId=null;save();render();drawChart();updateUI()};
+      r.onclick=()=>{state.sel=it.sym;draft=null;selId=null;save();render();drawChart();updateUI();if(typeof mGoChart==='function') mGoChart();};
       r.oncontextmenu=e=>rowMenu(e,it);
       r.querySelector('.del').onclick=e=>{e.stopPropagation();g.items=g.items.filter(x=>x!==it);delete cache[it.sym];delete real[it.sym];save();render();drawChart()};
       // 拖曳：放到其他股票上 → 插到它前面（可跨群組）
@@ -1378,7 +1427,7 @@ function pick(s){
   openSymbol(s.sym,s);
 }
 function openSymbol(sym,s={}){
-  sym=sym.toUpperCase(); if(typeof indFocus!=='undefined') indFocus=false;
+  sym=sym.toUpperCase(); if(typeof mGoChart==='function'&&document.body.dataset.mv!=='pf') mGoChart(); if(typeof indFocus!=='undefined') indFocus=false;
   draft=null; selId=null;
   if(all().some(x=>x.sym===sym)){ state.sel=sym; save(); render(); drawChart(); updateUI(); return; }
   const src=s.kind?{type:s.kind,id:sym}:guessSrc(sym);
@@ -1633,7 +1682,7 @@ wrap.addEventListener('pointerdown',e=>{
 wrap.addEventListener('pointerup',()=>{ if(drag){drag=null;save()} },true);
 /* 點選 K 線 → 新聞分頁顯示那天（含）之前的新聞 */
 let nClick=null;
-wrap.addEventListener('pointerdown',e=>{ nClick=(e.button===0&&!onUi(e)&&tool==='cursor'&&!drag&&!draft)?{...pos(e)}:null; },true);
+wrap.addEventListener('pointerdown',e=>{ nClick=(e.button===0&&e.pointerType==='mouse'&&!onUi(e)&&tool==='cursor'&&!drag&&!draft)?{...pos(e)}:null; },true);
 wrap.addEventListener('pointerup',e=>{
   const c=nClick; nClick=null; if(!c) return;
   const {x,y}=pos(e); if(Math.hypot(x-c.x,y-c.y)>4) return;            // 拖曳平移不算點選
@@ -2974,6 +3023,23 @@ cmpReady=true;
   } }).observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['title']});
 })();
 render(); drawChart(); updateUI(); loadAll();
+
+/* ---------- 手機版：下方分頁列 ---------- */
+const MQ=matchMedia('(max-width:820px)');
+function mSet(v){
+  v=v||lsG('wl-mview')||'chart'; document.body.dataset.mv=v; lsS('wl-mview',v);
+  document.querySelectorAll('#mnav button').forEach(b=>b.classList.toggle('on',b.dataset.v===v));
+  if(typeof indFocus!=='undefined'&&v!=='ind') indFocus=false;
+  showPane(v==='chart'?'wl':v);
+  if(v==='chart'){ renderDetail(); }
+  window.scrollTo(0,0);
+}
+function mGoChart(){ if(document.body.classList.contains('mob')&&document.body.dataset.mv!=='chart') mSet('chart'); }
+function mApply(){ document.body.classList.toggle('mob',MQ.matches); if(MQ.matches) mSet(); }
+document.querySelectorAll('#mnav button').forEach(b=>b.onclick=()=>mSet(b.dataset.v));
+$('mDrawBtn').onclick=()=>{ document.body.classList.toggle('mtools'); $('mDrawBtn').classList.toggle('on',document.body.classList.contains('mtools')); };
+MQ.addEventListener?MQ.addEventListener('change',mApply):MQ.addListener(mApply);
+mApply();
 </script>
 </body>
 </html>
