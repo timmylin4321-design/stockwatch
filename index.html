@@ -1189,21 +1189,26 @@ function gsLoadLib(){
     s.onload=()=>ok(); s.onerror=()=>{ gsLoadLib.p=null; no(new Error('無法載入 Google 登入元件')); }; document.head.appendChild(s); }));
 }
 // 必須由使用者點擊觸發（Google 會開一個小視窗；第一次要按同意，之後通常一閃即關）
+const GS_SCOPE_MSG='登入時沒有勾選「雲端硬碟的應用程式資料」權限，所以無法儲存。請按重試，在 Google 視窗中把所有項目都勾選（或按「全選」）後再按繼續。';
 async function gsAuth(first){
   const cid=gsCid(); if(!cid) throw new Error('尚未設定 Google 用戶端 ID');
   await gsLoadLib();
   return new Promise((ok,no)=>{
     const c=google.accounts.oauth2.initTokenClient({client_id:cid,scope:GS_SCOPE,
       callback:r=>{ if(r.error){ no(new Error(r.error_description||r.error)); return; }
-        gs.tok=r.access_token; gs.exp=Date.now()+(+r.expires_in||3600)*1e3; lsS('wl-gs-tok',JSON.stringify({t:gs.tok,exp:gs.exp})); ok(); },
+        if(!String(r.scope||'').includes('drive.appdata')){ gs.needConsent=true; no(Object.assign(new Error(GS_SCOPE_MSG),{scope:true})); return; }  // 登入時沒勾選雲端硬碟權限
+        gs.needConsent=false; gs.tok=r.access_token; gs.exp=Date.now()+(+r.expires_in||3600)*1e3; lsS('wl-gs-tok',JSON.stringify({t:gs.tok,exp:gs.exp})); ok(); },
       error_callback:e=>no(new Error(e.type==='popup_closed'?'登入視窗被關閉了':e.type==='popup_failed_to_open'?'瀏覽器擋住了登入視窗，請允許彈出視窗':(e.message||e.type)))});
-    c.requestAccessToken({prompt:first?'consent':''});
+    c.requestAccessToken({prompt:first||gs.needConsent?'consent':''});
   });
 }
 async function gapi(url,opt={}){
   const r=await fetch(url,{...opt,headers:{...(opt.headers||{}),Authorization:'Bearer '+gs.tok}});
   if(r.status===401){ gs.tok=null; lsS('wl-gs-tok','null'); throw Object.assign(new Error('Google 登入已過期'),{auth:true}); }
-  if(!r.ok){ let m=r.status; try{ m=(await r.json()).error?.message||m; }catch(e){} throw new Error('Google Drive：'+m); }
+  if(!r.ok){ let m=r.status, why=''; try{ const j=await r.json(); m=j.error?.message||m; why=JSON.stringify(j.error||''); }catch(e){}
+    if(r.status===403&&/has not been used|disabled|accessNotConfigured|SERVICE_DISABLED/i.test(why+m)) throw new Error('Google Drive API 尚未啟用或剛啟用，請幾分鐘後再試');
+    if(r.status===403&&/insufficient|scope/i.test(why+m)){ gs.needConsent=true; gs.tok=null; lsS('wl-gs-tok','null'); throw Object.assign(new Error(GS_SCOPE_MSG),{scope:true}); }
+    throw new Error('Google Drive：'+m); }
   return r;
 }
 async function gsFind(){
@@ -1233,7 +1238,7 @@ async function gsSync(opt={}){
     else if(s&&(rt>lt||(opt.first&&!lt))){ applyState(s); toast('已從 Google 同步較新的內容'); }
     else if(!s||lt>rt||gs.pending) await gsWrite();
     gs.last=Date.now(); lsS('wl-gs-last',String(gs.last));
-  }catch(e){ gs.err=e.message; if(e.auth) gs.pending=true; console.warn(e); }
+  }catch(e){ gs.err=e.message; if(e.auth||e.scope) gs.pending=true; if(e.scope) setTimeout(()=>alert(e.message),50); console.warn(e); }
   gs.busy=false; gsStat();
 }
 function gsSchedule(){ if(!gs.linked) return; gs.pending=true; clearTimeout(gs.timer);
@@ -1248,15 +1253,15 @@ function gsStat(){
   if(!gs.linked){ el.textContent=''; el.className='asStat'; return; }
   const hm=t=>new Date(t).toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit',hour12:false});
   if(gs.busy){ el.className='asStat ok'; el.textContent='☁ 同步中…'; }
-  else if(!gsTokOk()){ el.className='asStat warn'; el.textContent=gs.pending?'☁ 有變更未同步，點此同步':'☁ 點此同步'; el.title='Google 登入每小時會過期，點一下就會重新連線並同步'; }
-  else if(gs.err){ el.className='asStat warn'; el.textContent='☁ 同步失敗，點此重試'; el.title=gs.err; }
+  else if(!gsTokOk()&&!gs.needConsent){ el.className='asStat warn'; el.textContent=gs.pending?'☁ 有變更未同步，點此同步':'☁ 點此同步'; el.title='Google 登入每小時會過期，點一下就會重新連線並同步'; }
+  else if(gs.err||gs.needConsent){ el.className='asStat warn'; el.textContent=gs.needConsent?'☁ 需要允許雲端硬碟權限，點此重試':'☁ 同步失敗，點此重試'; el.title=gs.err; }
   else if(gs.pending){ el.className='asStat ok'; el.textContent='☁ 等待同步…'; }
   else { el.className='asStat ok'; el.textContent='☁ 已同步'+(gs.last?' '+hm(gs.last):''); el.title='已和 Google 帳號同步'; }
 }
 async function gsWho(){ try{ const j=await (await gapi('https://www.googleapis.com/oauth2/v3/userinfo')).json(); if(j.email){ gs.email=j.email; lsS('wl-gs-email',j.email); gsStat(); } }catch(e){} }
 async function gsConnect(first){
   try{ await gsAuth(first); if(first){ gs.linked=true; lsS('wl-gs','1'); } if(first||!gs.email) gsWho(); await gsSync({first}); gs.synced=true; if(first&&!gs.err) toast('已登入，之後的修改會自動儲存到你的 Google 雲端硬碟'); }
-  catch(e){ gs.err=e.message; toast('Google 同步：'+e.message); }
+  catch(e){ gs.err=e.message; if(e.scope) alert(e.message); else toast('Google 同步：'+e.message); }
   gsStat();
 }
 function gsMenu(){
