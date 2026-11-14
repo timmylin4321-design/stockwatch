@@ -458,7 +458,9 @@
       <button class="tb ma" data-ma="5">MA5</button>
       <button class="tb ma" data-ma="20">MA20</button>
       <button class="tb ma" data-ma="60">MA60</button>
+      <button class="tb" id="bbBtn" title="布林通道（20 日，±2 標準差）">布林</button>
       <button class="tb" id="volBtn">成交量</button>
+      <button class="tb" id="indBtn" title="技術指標副圖（MACD、KD、RSI）">指標</button>
       <button class="tb" id="subBtn" title="顯示／隱藏籌碼副圖（法人、融資）">籌碼</button>
       <button class="tb" id="divBtn" title="在 K 線底部標示除權息日期（滑鼠移上去看金額）">除權息</button>
       <button class="tb" id="meetBtn" title="在 K 線底部標示股東會日期（上市公司；滑鼠移上去看停止過戶日等）">股東會</button>
@@ -803,6 +805,7 @@ const volS=chart.addHistogramSeries({priceScaleId:'vol',priceFormat:{type:'volum
 chart.priceScale('vol').applyOptions({scaleMargins:{top:0.82,bottom:0}});
 const maS={};
 [5,20,60].forEach(n=>maS[n]=chart.addLineSeries({color:MA_COLORS[n],lineWidth:1,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false}));
+const bbS={up:'#4dd0e1',mid:'#4dd0e199',dn:'#4dd0e1'}; for(const k in bbS) bbS[k]=chart.addLineSeries({color:bbS[k],lineWidth:1,lineStyle:k==='mid'?2:0,priceLineVisible:false,lastValueVisible:false,crosshairMarkerVisible:false});
 let shown=[], shownT=[], lastSym=null, lastTf=null;
 
 function applyColors(){
@@ -820,6 +823,8 @@ function drawChart(){
   candle.applyOptions({priceFormat:{type:'price',precision:it.dp,minMove:1/10**it.dp}});
   volS.setData(state.vol&&shown.some(b=>b.volume>0)?shown.map(b=>({time:b.time,value:b.volume,color:(b.close>=b.open?up:dn)+'66'})):[]);
   [5,20,60].forEach(n=>maS[n].setData(state.mas.includes(n)&&!cmpOn()?sma(shown,n):[])); // 比較模式下隱藏均線
+  { const bb=state.bb&&!cmpOn()?calcBB(shown):[]; for(const k of ['up','mid','dn']) bbS[k].setData(bb.map((v,i)=>v?{time:shown[i].time,value:v[k]}:null).filter(Boolean)); }
+  if(typeof subReady!=='undefined'&&subReady&&isIndMode(state.subMode)) drawSub();   // 換股票／週期時，技術指標跟著重算
   if(shown.length&&(it.sym!==lastSym||state.tf!==lastTf)){
     setRange(state.tf==='D'?0.5:state.tf==='W'?2:10);
     lastSym=it.sym; lastTf=state.tf;
@@ -833,6 +838,7 @@ function drawChart(){
   document.querySelectorAll('.tf').forEach(b=>b.classList.toggle('on',b.dataset.tf===state.tf));
   document.querySelectorAll('.ma').forEach(b=>b.classList.toggle('on',state.mas.includes(+b.dataset.ma)));
   $('volBtn').classList.toggle('on',state.vol);
+  $('bbBtn').classList.toggle('on',!!state.bb);
   drawLegend(null);
   drawCompare();
   drawLegend(null);
@@ -851,7 +857,8 @@ function drawLegend(time){
   const b=shown[i], pc=i>0?shown[i-1].close:b.open, ch=b.close-pc, cls=ch>=0?'up':'down', d=it.dp;
   const tfName={D:'1D',W:'1W',M:'1M'}[state.tf];
   const maTxt=state.mas.map(n=>{const s=sma(shown.slice(Math.max(0,i-n+1),i+1),n)[0];
-    return s?`<span style="color:${MA_COLORS[n]}">MA${n} ${fmt(s.value,d)}</span>`:''}).join('　');
+    return s?`<span style="color:${MA_COLORS[n]}">MA${n} ${fmt(s.value,d)}</span>`:''}).join('　')
+    +(state.bb?(()=>{ const v=calcBB(shown.slice(Math.max(0,i-19),i+1))[Math.min(i,19)]; return v?`　<span style="color:#4dd0e1">BB ${fmt(v.up,d)} / ${fmt(v.mid,d)} / ${fmt(v.dn,d)}</span>`:''; })():'');
   $('legend').innerHTML=`<div class="t">${it.name} <span>· ${tfName} · ${it.ex}</span></div>
    <div class="ohlc"><b>開</b><span class="${cls}">${fmt(b.open,d)}</span><b>高</b><span class="${cls}">${fmt(b.high,d)}</span>
    <b>低</b><span class="${cls}">${fmt(b.low,d)}</span><b>收</b><span class="${cls}">${fmt(b.close,d)}</span>
@@ -1070,6 +1077,7 @@ document.querySelectorAll('.tf').forEach(b=>b.onclick=()=>{state.tf=b.dataset.tf
 document.querySelectorAll('.ma').forEach(b=>b.onclick=()=>{const n=+b.dataset.ma;
   state.mas=state.mas.includes(n)?state.mas.filter(x=>x!==n):[...state.mas,n];save();drawChart()});
 $('volBtn').onclick=()=>{state.vol=!state.vol;save();drawChart()};
+$('bbBtn').onclick=()=>{state.bb=!state.bb;save();drawChart()};
 document.querySelectorAll('.rg').forEach(b=>b.onclick=()=>setRange(+b.dataset.y));
 $('addBtn').onclick=()=>{$('addbar').classList.toggle('show');$('inSec').innerHTML=state.data.map(g=>`<option>${g.sec}</option>`).join('');if(state.data.some(g=>g.sec==='股票'))$('inSec').value='股票';$('inSym').focus()};
 $('inOk').onclick=()=>{
@@ -1685,6 +1693,21 @@ $('clrBtn').onclick=()=>{ if(lines().length&&confirm(`清除 ${state.sel} 的所
 
 /* ---------- 籌碼：法人（大戶）與融資（散戶）---------- */
 var chip={}, chipLoading={}, chipErr={}, subReady=false;
+
+/* ---------- 技術指標（依目前的日／週／月 K 計算） ---------- */
+function emaArr(v,n){ const k=2/(n+1), out=[]; let e=null; v.forEach((x,i)=>{ e=e==null?x:x*k+e*(1-k); out.push(e); }); return out; }
+function calcMACD(b,f=12,s=26,g=9){ const c=b.map(x=>x.close), e1=emaArr(c,f), e2=emaArr(c,s), dif=c.map((_,i)=>e1[i]-e2[i]), sig=emaArr(dif,g);
+  return b.map((_,i)=>i<s-1?null:{dif:dif[i],macd:sig[i],osc:dif[i]-sig[i]}); }
+function calcKD(b,n=9){ let k=50,d=50; return b.map((x,i)=>{ const w=b.slice(Math.max(0,i-n+1),i+1), hi=Math.max(...w.map(y=>y.high)), lo=Math.min(...w.map(y=>y.low));
+  const rsv=hi===lo?50:(x.close-lo)/(hi-lo)*100; k=k*2/3+rsv/3; d=d*2/3+k/3; return i<n-1?null:{k,d}; }); }
+function calcRSI(b,n){ let ag=0,al=0; return b.map((x,i)=>{ if(!i) return null; const ch=x.close-b[i-1].close, g=Math.max(ch,0), l=Math.max(-ch,0);
+  if(i<=n){ ag+=g/n; al+=l/n; return i<n?null:(al===0?100:100-100/(1+ag/al)); }
+  ag=(ag*(n-1)+g)/n; al=(al*(n-1)+l)/n; return al===0?100:100-100/(1+ag/al); }); }
+function calcBB(b,n=20,m=2){ return b.map((_,i)=>{ if(i<n-1) return null; const w=b.slice(i-n+1,i+1).map(x=>x.close), mid=w.reduce((s,x)=>s+x,0)/n;
+  const sd=Math.sqrt(w.reduce((s,x)=>s+(x-mid)**2,0)/n); return {mid,up:mid+m*sd,dn:mid-m*sd}; }); }
+const IND_MODES={macd:'MACD (12,26,9)',kd:'KD (9,3,3)',rsi:'RSI (6,12)'};
+const isIndMode=m=>!!IND_MODES[m];
+
 const SUB_MODES={inst:'三大法人買賣超',fi:'外資買賣超',it:'投信買賣超',dl:'自營商買賣超',mchg:'融資增減（散戶）',mbal:'融資餘額（散戶）',sbal:'融券餘額',fr:'外資持股比例 %'};
 const isLineMode=m=>['mbal','sbal','fr'].includes(m);
 const isTwStock=it=>it&&it.src&&it.src.type==='tw'&&it.src.id!=='TAIEX';
@@ -1703,6 +1726,8 @@ const sub=LightweightCharts.createChart($('subChart'),{
 chart.priceScale('right').applyOptions({minimumWidth:72});
 const subHist=sub.addHistogramSeries({priceFormat:{type:'volume'},priceLineVisible:false,lastValueVisible:true});
 const subLine=sub.addLineSeries({color:'#f7c548',lineWidth:1.5,priceLineVisible:false});
+const subL2=sub.addLineSeries({color:'#2196f3',lineWidth:1.5,priceLineVisible:false});
+let subRefs=[];  // 指標的參考線（KD 80/20、RSI 70/30、MACD 0 軸）
 let syncing=false, subData=[];
 chart.timeScale().subscribeVisibleLogicalRangeChange(r=>{ if(syncing||!r||!subReady) return; syncing=true; sub.timeScale().setVisibleLogicalRange(r); syncing=false; });
 sub.timeScale().subscribeVisibleLogicalRangeChange(r=>{ if(syncing||!r||!subData.length||subData.length!==shown.length) return; syncing=true; chart.timeScale().setVisibleLogicalRange(r); syncing=false; });
@@ -1716,10 +1741,13 @@ function dayVal(r,mode){ if(!r) return undefined;
 function drawSub(){
   if(!subReady) return;
   const it=cur(), mode=state.subMode||'inst', on=mode!=='off';
-  $('subWrap').classList.toggle('show',on); $('subBtn').classList.toggle('on',on);
+  $('subWrap').classList.toggle('show',on); $('subBtn').classList.toggle('on',on&&!isIndMode(mode)); $('indBtn').classList.toggle('on',on&&isIndMode(mode));
   if(!on) return;
   $('subSel').value=mode;
-  const empty=msg=>{ subData=[]; syncing=true; subHist.setData([]); subLine.setData([]); syncing=false; $('subLegend').textContent=msg; };
+  subRefs.forEach(([s,l])=>s.removePriceLine(l)); subRefs=[];
+  const empty=msg=>{ subData=[]; syncing=true; subHist.setData([]); subLine.setData([]); subL2.setData([]); syncing=false; $('subLegend').textContent=msg; };
+  if(isIndMode(mode)) return drawIndSub(mode,empty);
+  subL2.setData([]); subHist.applyOptions({priceFormat:{type:'volume'}}); subLine.applyOptions({color:'#f7c548',priceFormat:{type:'price',precision:2,minMove:0.01}});
   if(!isTwStock(it)) return empty('籌碼資料僅支援台股個股');
   const C=chip[it.sym];
   if(!C){ if(!chipErr[it.sym]||Date.now()-(chipErrAt[it.sym]||0)>120e3) loadChip(it); return empty(chipErr[it.sym]?'籌碼資料載入失敗：'+chipErr[it.sym]:'載入籌碼資料中…'); }
@@ -1735,12 +1763,43 @@ function drawSub(){
   syncing=false;
   subLegend(null);
 }
+function drawIndSub(mode,empty){
+  if(!shown.length) return empty('沒有 K 線資料');
+  const up=css('--up'), dn=css('--down'), pf={type:'price',precision:2,minMove:0.01}, W=t=>({time:t});
+  const ref=(s,price,color='#555')=>subRefs.push([s,s.createPriceLine({price,color,lineWidth:1,lineStyle:2,axisLabelVisible:false})]);
+  let H=[],A=[],B=[];
+  if(mode==='macd'){ const m=calcMACD(shown);
+    subData=shown.map((b,i)=>m[i]?{time:b.time,dif:m[i].dif,macd:m[i].macd,osc:m[i].osc}:{time:b.time});
+    H=subData.map(x=>x.osc==null?W(x.time):{time:x.time,value:x.osc,color:(x.osc>=0?up:dn)+'bb'});
+    A=subData.map(x=>x.dif==null?W(x.time):{time:x.time,value:x.dif}); B=subData.map(x=>x.macd==null?W(x.time):{time:x.time,value:x.macd});
+    subLine.applyOptions({color:'#f7c548',priceFormat:pf}); subL2.applyOptions({color:'#2196f3',priceFormat:pf}); subHist.applyOptions({priceFormat:pf});
+  } else if(mode==='kd'){ const m=calcKD(shown);
+    subData=shown.map((b,i)=>m[i]?{time:b.time,k:m[i].k,d:m[i].d}:{time:b.time});
+    A=subData.map(x=>x.k==null?W(x.time):{time:x.time,value:x.k}); B=subData.map(x=>x.d==null?W(x.time):{time:x.time,value:x.d});
+    subLine.applyOptions({color:'#f7c548',priceFormat:pf}); subL2.applyOptions({color:'#2196f3',priceFormat:pf});
+  } else { const r6=calcRSI(shown,6), r12=calcRSI(shown,12);
+    subData=shown.map((b,i)=>({time:b.time,r6:r6[i]??undefined,r12:r12[i]??undefined}));
+    A=subData.map(x=>x.r6==null?W(x.time):{time:x.time,value:x.r6}); B=subData.map(x=>x.r12==null?W(x.time):{time:x.time,value:x.r12});
+    subLine.applyOptions({color:'#f7c548',priceFormat:pf}); subL2.applyOptions({color:'#b388ff',priceFormat:pf});
+  }
+  syncing=true;
+  subHist.setData(H); subLine.setData(A); subL2.setData(B);
+  if(mode==='macd') ref(subLine,0,'#444');
+  if(mode==='kd'){ ref(subLine,80,'#f2364588'); ref(subLine,20,'#22ab9488'); }
+  if(mode==='rsi'){ ref(subLine,70,'#f2364588'); ref(subLine,30,'#22ab9488'); }
+  const r=chart.timeScale().getVisibleLogicalRange(); if(r) sub.timeScale().setVisibleLogicalRange(r);
+  syncing=false; subLegend(null);
+}
 function subLegend(time){
   if(!subReady||!subData.length) return;
   const mode=state.subMode||'inst';
   let i=time?subData.findIndex(b=>b.time===time):-1;
-  if(i<0){ i=subData.length-1; while(i>0&&subData[i].value==null) i--; }
+  if(i<0){ i=subData.length-1; if(!isIndMode(mode)) while(i>0&&subData[i].value==null) i--; }
   const b=subData[i]; if(!b) return;
+  if(isIndMode(mode)){ const f=v=>v==null?'—':v.toFixed(2), sp=(c,n,v)=>`<span style="color:${c}">${n} ${f(v)}</span>`, g=`<span style="color:var(--muted)">${b.time}</span>　`;
+    $('subLegend').innerHTML=g+(mode==='macd'?`${sp('#f7c548','DIF',b.dif)}　${sp('#2196f3','MACD',b.macd)}　<span class="${(b.osc||0)>=0?'up':'down'}">OSC ${f(b.osc)}</span>`
+      :mode==='kd'?`${sp('#f7c548','K',b.k)}　${sp('#2196f3','D',b.d)}`:`${sp('#f7c548','RSI6',b.r6)}　${sp('#b388ff','RSI12',b.r12)}`);
+    return; }
   const unit=mode==='fr'?'%':'張', v=b.value;
   $('subLegend').innerHTML=v==null?`<span style="color:var(--muted)">${b.time} 無資料</span>`
     :`<span style="color:var(--muted)">${b.time}</span>　<span class="${isLineMode(mode)?'':v>=0?'up':'down'}">${isLineMode(mode)?v.toLocaleString('en-US'):fmtZ(v)} ${unit}</span>`;
@@ -1896,10 +1955,11 @@ $('chipPrev').onclick=()=>chipDate&&chipGo(-1);
 $('chipNext').onclick=()=>chipDate&&chipGo(1);
 $('chipReload').onclick=async()=>{ if(!chipDate) return chipGo(0); $('chipList').innerHTML='<div class="sgEmpty">重新載入中…</div>'; try{ await loadDay(chipDate,true); }catch(e){} renderChip(); };
 $('chipEtf').onchange=renderChip;
-$('subSel').innerHTML=Object.entries(SUB_MODES).map(([k,n])=>`<option value="${k}">${n}</option>`).join('');
-$('subSel').onchange=()=>{ state.subMode=state.lastSub=$('subSel').value; saveLocal(); drawSub(); };
+$('subSel').innerHTML='<optgroup label="技術指標">'+Object.entries(IND_MODES).map(([k,n])=>`<option value="${k}">${n}</option>`).join('')+'</optgroup><optgroup label="籌碼（台股）">'+Object.entries(SUB_MODES).map(([k,n])=>`<option value="${k}">${n}</option>`).join('')+'</optgroup>';
+$('subSel').onchange=()=>{ const v=$('subSel').value; state.subMode=state.lastSub=v; if(isIndMode(v)) state.lastInd=v; else state.lastChip=v; saveLocal(); drawSub(); };
 $('subClose').onclick=()=>{ state.subMode='off'; saveLocal(); drawSub(); };
-$('subBtn').onclick=()=>{ state.subMode=(state.subMode&&state.subMode!=='off')?'off':(state.lastSub||'inst'); if(state.subMode!=='off') state.lastSub=state.subMode; saveLocal(); drawSub(); };
+$('subBtn').onclick=()=>{ const m=state.subMode; state.subMode=(m&&m!=='off'&&!isIndMode(m))?'off':(state.lastChip||'inst'); saveLocal(); drawSub(); };
+$('indBtn').onclick=()=>{ const m=state.subMode; state.subMode=isIndMode(m)?'off':(state.lastInd||'macd'); saveLocal(); drawSub(); };
 subReady=true;
 if(!state.subMode) state.subMode='inst';
 
