@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="build" content="55693f198804">
 <title>觀察清單 K線</title>
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#0f0f0f">
@@ -2889,6 +2890,35 @@ $('divBtn').onclick=()=>{ state.showDiv=!state.showDiv; saveLocal(); $('divBtn')
 showPane(state.pane||'wl');
 // 放在網址上時註冊 Service Worker，讓 Chrome 顯示「安裝」圖示（不做快取，重新整理就是新版）
 if(location.protocol==='https:'&&'serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(()=>{});
+
+/* ---------- 自動更新：網站有新版本時自動重新載入，不用手動重新整理 ---------- */
+(()=>{
+  if(location.protocol!=='https:') return;
+  try{ const u=new URL(location.href); if(u.searchParams.has('u')){ u.searchParams.delete('u'); history.replaceState(null,'',u.pathname+u.search+u.hash); } }catch(e){}
+  const src=()=>location.pathname.endsWith('/')?location.pathname+'index.html':location.pathname;
+  const mine=document.querySelector('meta[name=build]')?.content||'';   // 這個畫面的版本代號（每次發布都不同）
+  let newer=false, lastAct=Date.now();
+  ['pointerdown','keydown','wheel','touchstart'].forEach(ev=>document.addEventListener(ev,()=>lastAct=Date.now(),{passive:true,capture:true}));
+  async function check(){
+    try{ const r=await fetch(src()+'?_='+Date.now(),{cache:'no-store'}); if(!r.ok) return;
+      const m=(await r.text()).match(/<meta name="build" content="([^"]+)"/); if(m&&mine&&m[1]!==mine&&m[1]!=='__BUI'+'LD__') newer=true; }catch(e){}
+    if(newer) tryReload();
+  }
+  function busy(){ const a=document.activeElement;
+    return (a&&/INPUT|TEXTAREA|SELECT/.test(a.tagName))||(typeof draft!=='undefined'&&draft)||(typeof drag!=='undefined'&&drag)
+      ||(typeof gs!=='undefined'&&(gs.busy||gs.pending&&gs.linked&&gsTokOk()))||(typeof aiAbort!=='undefined'&&aiAbort)||(typeof indAIAbort!=='undefined'&&indAIAbort); }
+  function tryReload(){
+    if(!newer) return;
+    if(document.visibilityState==='visible'&&(Date.now()-lastAct<20e3||busy())){ setTimeout(tryReload,10e3); return; }  // 正在操作時先不打擾
+    try{ saveLocal(); }catch(e){}
+    if(document.visibilityState==='visible') toast('已更新到最新版本');
+    setTimeout(()=>location.replace(src()+'?u='+Date.now()+location.hash),document.visibilityState==='visible'?600:0);
+  }
+  check();
+  setInterval(check,3*60e3);
+  document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible') check(); });
+})();
+
 /* ---------- 股票比較（疊加其他商品，價格軸改成百分比）----------
    比較是「成對」記錄的：在 A 的圖上加入 B，就記成 A↔B。
    看 A 或 B 時才會出現對方的比較線；換到不相關的股票不顯示，但配對會保留，回來時再出現。 */
