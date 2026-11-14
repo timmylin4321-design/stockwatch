@@ -326,6 +326,14 @@
   .rsStk{cursor:pointer;margin:0} .rsStk:hover{background:rgba(41,98,255,.3)}
   .rsWatch{font-size:11.5px;color:var(--muted);margin:8px 0 2px;line-height:1.6} .rsWatch b{display:block;color:var(--text);font-weight:600;margin-bottom:2px}
   .indRetry{background:none;border:1px solid var(--line);color:var(--text);border-radius:4px;padding:1px 8px;font:11px inherit;font-family:inherit;cursor:pointer}
+  .acct{padding:6px 12px;border-bottom:1px solid var(--line);font-size:12px}
+  .gLogin{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;background:#fff;color:#1f1f1f;border:0;border-radius:6px;padding:7px 10px;font:600 12.5px inherit;font-family:inherit;cursor:pointer}
+  .gLogin:hover{background:#eef3fd}
+  .gLogin[hidden],.gUser[hidden]{display:none}
+  .gUser{display:flex;align-items:center;gap:8px;min-width:0;cursor:pointer}
+  .gAva{flex:0 0 22px;height:22px;border-radius:50%;background:#1a73e8;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:11px}
+  .gMail{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)}
+  .gUser .asStat{margin-left:auto}
   .tsep{width:24px;height:1px;background:var(--line);margin:6px 0}
   .chartWrap{flex:1;position:relative;min-height:0;min-width:0}
   #chart{position:absolute;inset:0}
@@ -501,7 +509,7 @@
 
   <aside class="panel">
     <header>
-      <h1>觀察清單 <span class="asStat" id="asStat"></span><span class="asStat" id="gsStat"></span></h1>
+      <h1>觀察清單 <span class="asStat" id="asStat"></span></h1>
       <button class="ibtn" id="asBtn" title="自動儲存到檔案"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7V4M8 20v-6h8v6"/></svg></button>
       <button class="ibtn" id="gsBtn" title="Google 帳號同步（電腦、手機共用）"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M7 18h10.5a4 4 0 0 0 .4-8 6 6 0 0 0-11.6 1.6A3.3 3.3 0 0 0 7 18z"/><path d="M10 13.5l2-2 2 2M12 11.5V16"/></svg></button>
       <div class="asMenu" id="asMenu"></div><div class="asMenu" id="gsMenu"></div>
@@ -512,6 +520,10 @@
       <button class="ibtn" id="refBtn" title="重新抓取最新資料">⟳</button>
       <button class="ibtn" id="twBtn" title="切換紅漲綠跌">紅</button>
     </header>
+    <div class="acct" id="acct">
+      <button class="gLogin" id="gsLogin"><svg viewBox="0 0 48 48" width="16" height="16"><path fill="#4285F4" d="M45.1 24.5c0-1.6-.1-3.1-.4-4.5H24v8.5h11.8c-.5 2.8-2.1 5.1-4.4 6.7v5.6h7.1c4.2-3.8 6.6-9.5 6.6-16.3z"/><path fill="#34A853" d="M24 46c5.9 0 10.9-2 14.5-5.3l-7.1-5.6c-2 1.3-4.5 2.1-7.4 2.1-5.7 0-10.5-3.8-12.2-9H4.5v5.8C8.1 41.1 15.5 46 24 46z"/><path fill="#FBBC05" d="M11.8 28.2c-.4-1.3-.7-2.7-.7-4.2s.3-2.9.7-4.2V14H4.5C3 17 2.2 20.4 2.2 24s.8 7 2.3 10l7.3-5.8z"/><path fill="#EA4335" d="M24 10.8c3.2 0 6.1 1.1 8.4 3.3l6.3-6.3C34.9 4.2 29.9 2 24 2 15.5 2 8.1 6.9 4.5 14l7.3 5.8c1.7-5.2 6.5-9 12.2-9z"/></svg><span>登入 Google 帳號，自動儲存到雲端硬碟</span></button>
+      <div class="gUser" id="gsUser" hidden><span class="gAva" id="gsAva">G</span><span class="gMail" id="gsMail"></span><span class="asStat" id="gsStat"></span></div>
+    </div>
     <div class="ptabs"><button data-p="wl" class="on">觀察清單</button><button data-p="ind">產業排行</button><button data-p="chip">籌碼排行</button><button data-p="pf">庫存損益</button><button data-p="ai">AI 選股</button></div>
     <div class="pane" id="pWL">
     <div class="addbar" id="addbar">
@@ -1165,11 +1177,11 @@ window.addEventListener('beforeunload',()=>{ if(wTimer){ clearTimeout(wTimer); w
 
 /* ---------- Google 帳號同步（存到你 Google 雲端硬碟的「應用程式資料」隱藏資料夾） ---------- */
 const GCLIENT_BUILTIN='423652789087-duq3261u3pu9qc8eus88n1vd755po1f0.apps.googleusercontent.com';                                   // OAuth 用戶端 ID（xxx.apps.googleusercontent.com）
-const GS_SCOPE='https://www.googleapis.com/auth/drive.appdata', GS_FILE='stockwatch-sync.json';
+const GS_SCOPE='https://www.googleapis.com/auth/drive.appdata openid email', GS_FILE='stockwatch-sync.json';
 const gsCid=()=>GCLIENT_BUILTIN||lsG('wl-gs-cid')||'';
-var gs={linked:lsG('wl-gs')==='1', tok:null, exp:0, fileId:null, busy:false, last:null, pending:false, err:'', timer:null, client:null, email:''};
+var gs={synced:false, lastTry:0, linked:lsG('wl-gs')==='1', tok:null, exp:0, fileId:null, busy:false, last:null, pending:false, err:'', timer:null, client:null, email:''};
 try{ const t=JSON.parse(lsG('wl-gs-tok')||'null'); if(t&&t.exp>Date.now()+60e3){ gs.tok=t.t; gs.exp=t.exp; } }catch(e){}
-gs.last=+lsG('wl-gs-last')||null;
+gs.last=+lsG('wl-gs-last')||null; gs.email=lsG('wl-gs-email')||'';
 const gsTokOk=()=>gs.tok&&gs.exp>Date.now()+60e3;
 function gsLoadLib(){
   if(window.google?.accounts?.oauth2) return Promise.resolve();
@@ -1231,6 +1243,8 @@ function gsSchedule(){ if(!gs.linked) return; gs.pending=true; clearTimeout(gs.t
 function gsStat(){
   const el=$('gsStat'), b=$('gsBtn'); if(!el) return;
   b.classList.toggle('on',gs.linked&&gsTokOk()&&!gs.err);
+  $('gsLogin').hidden=gs.linked; $('gsUser').hidden=!gs.linked;
+  $('gsMail').textContent=gs.email||'Google 帳號'; $('gsAva').textContent=(gs.email||'G')[0].toUpperCase();
   if(!gs.linked){ el.textContent=''; el.className='asStat'; return; }
   const hm=t=>new Date(t).toLocaleTimeString('zh-TW',{hour:'2-digit',minute:'2-digit',hour12:false});
   if(gs.busy){ el.className='asStat ok'; el.textContent='☁ 同步中…'; }
@@ -1239,33 +1253,38 @@ function gsStat(){
   else if(gs.pending){ el.className='asStat ok'; el.textContent='☁ 等待同步…'; }
   else { el.className='asStat ok'; el.textContent='☁ 已同步'+(gs.last?' '+hm(gs.last):''); el.title='已和 Google 帳號同步'; }
 }
+async function gsWho(){ try{ const j=await (await gapi('https://www.googleapis.com/oauth2/v3/userinfo')).json(); if(j.email){ gs.email=j.email; lsS('wl-gs-email',j.email); gsStat(); } }catch(e){} }
 async function gsConnect(first){
-  try{ await gsAuth(first); if(first){ gs.linked=true; lsS('wl-gs','1'); } await gsSync({first}); if(first&&!gs.err) toast('已開啟 Google 帳號同步'); }
+  try{ await gsAuth(first); if(first){ gs.linked=true; lsS('wl-gs','1'); } if(first||!gs.email) gsWho(); await gsSync({first}); gs.synced=true; if(first&&!gs.err) toast('已登入，之後的修改會自動儲存到你的 Google 雲端硬碟'); }
   catch(e){ gs.err=e.message; toast('Google 同步：'+e.message); }
   gsStat();
 }
 function gsMenu(){
   const m=$('gsMenu'), cid=gsCid();
   m.innerHTML=!cid?`<div class="note">尚未設定 Google 用戶端 ID。<br>貼上在 Google Cloud 建立的 ID：</div><div style="padding:0 14px 10px"><input id="gsCidIn" placeholder="xxxx.apps.googleusercontent.com" style="width:100%"></div><button data-a="cid">儲存 ID</button>`
-    :gs.linked?`<div class="note">已開啟 Google 帳號同步。<br>資料存在你 Google 雲端硬碟的應用程式資料夾（只有這個網站讀得到）。${gs.err?`<br><span style="color:#f7c548">${esc(gs.err)}</span>`:''}</div><button data-a="now">立即同步</button><button data-a="off">在這台裝置停止同步</button>`
+    :gs.linked?`<div class="note">已登入：<b style="color:var(--text)">${esc(gs.email||'Google 帳號')}</b><br>修改後會自動儲存到你的 Google 雲端硬碟。<br>資料存在你 Google 雲端硬碟的應用程式資料夾（只有這個網站讀得到）。${gs.err?`<br><span style="color:#f7c548">${esc(gs.err)}</span>`:''}</div><button data-a="now">立即同步</button><button data-a="off">登出（這台裝置停止自動儲存）</button>`
     :`<div class="note">用 Google 帳號在電腦、手機之間同步觀察清單、趨勢線、庫存損益等內容。<br>（AI 金鑰不會同步）</div><button data-a="on">用 Google 帳號登入並開始同步</button>`;
   m.querySelectorAll('button').forEach(b=>b.onclick=async e=>{ e.stopPropagation(); m.classList.remove('show'); const a=b.dataset.a;
     if(a==='cid'){ const v=$('gsCidIn').value.trim(); if(!/\.apps\.googleusercontent\.com$/.test(v)) return toast('ID 格式不對，應該是 xxx.apps.googleusercontent.com'); lsS('wl-gs-cid',v); toast('已儲存，接著點「用 Google 帳號登入」'); gsMenu(); return; }
     if(a==='on') gsConnect(true);
     if(a==='now'){ if(gsTokOk()) gsSync(); else gsConnect(false); }
-    if(a==='off'){ gs.linked=false; gs.tok=null; lsS('wl-gs','0'); lsS('wl-gs-tok','null'); gsStat(); toast('這台裝置已停止 Google 同步（雲端資料保留）'); }
+    if(a==='off'){ gs.linked=false; gs.tok=null; gs.email=''; lsS('wl-gs','0'); lsS('wl-gs-tok','null'); lsS('wl-gs-email',''); gsStat(); toast('已登出，這台裝置停止自動儲存到 Google（雲端資料保留）'); }
   });
   const ci=m.querySelector('#gsCidIn'); if(ci) ci.onclick=e=>e.stopPropagation();
   m.classList.add('show');
 }
 $('gsBtn').onclick=e=>{ e.stopPropagation(); if($('gsMenu').classList.contains('show')) $('gsMenu').classList.remove('show'); else gsMenu(); };
 document.addEventListener('click',e=>{ if(!$('gsMenu').contains(e.target)) $('gsMenu').classList.remove('show'); });
-$('gsStat').onclick=()=>{ if(!gs.linked||gs.busy) return; if(gsTokOk()) gsSync(); else gsConnect(false); };
+$('gsLogin').onclick=()=>gsConnect(true);
+$('gsUser').onclick=e=>{ e.stopPropagation(); if(e.target.id==='gsStat'&&!gs.busy){ if(gsTokOk()) gsSync(); else gsConnect(false); return; } gsMenu(); };
+// 登入憑證每小時過期：有未儲存的修改、或這次開啟還沒同步過時，下一次點擊畫面就自動重新連線（Google 視窗會一閃而過）
+document.addEventListener('pointerdown',e=>{ if(!gs.linked||gsTokOk()||gs.busy||Date.now()-gs.lastTry<60e3) return;
+  if(!(gs.pending||!gs.synced)||e.target.closest('#gsLogin,#gsUser,#gsMenu')) return; gs.lastTry=Date.now(); gsConnect(false); },true);
 document.addEventListener('visibilitychange',()=>{ if(!gsTokOk()) return;
   if(document.visibilityState==='visible') gsSync();                     
   else if(gs.pending&&!gs.busy){ clearTimeout(gs.timer); gsWrite().catch(()=>{}); } });  // 離開前把還沒上傳的變更送出
 setInterval(()=>{ if(document.visibilityState==='visible'&&gsTokOk()&&!gs.pending) gsSync(); },5*60e3);
-gsStat(); if(gs.linked&&gsTokOk()) gsSync();
+gsStat(); if(gs.linked&&gsTokOk()){ gsSync().then(()=>gs.synced=true); if(!gs.email) gsWho(); }
 
 /* ---------- 備份：匯出／匯入（清單、各股畫線、圖表設定） ---------- */
 const toastEl=document.createElement('div'); toastEl.className='toast'; document.body.appendChild(toastEl);
