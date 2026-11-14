@@ -449,7 +449,7 @@
   body.mob .panel{width:100%;height:auto;overflow:visible;border:0}
   body.mob .pane{min-height:0}
   body.mob .list{max-height:none;overflow:visible}
-  body.mob .chartArea{height:74svh;min-height:420px;border-right:0;border-bottom:1px solid var(--line)}
+  body.mob .chartArea{height:calc(100svh - 58px - env(safe-area-inset-bottom));min-height:460px;border-right:0;border-bottom:1px solid var(--line)}
   body.mob .toolbar{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;padding:6px 8px;gap:2px}
   body.mob .toolbar::-webkit-scrollbar{display:none}
   body.mob .toolbar>*{flex:none}
@@ -459,7 +459,16 @@
   body.mob .sugg{position:fixed;left:8px;right:8px;top:52px;width:auto;max-height:55svh}
   body.mob .tools{display:none}
   body.mob.mtools .tools{display:flex}
-  body.mob .subWrap{height:120px}
+  body.mob .subWrap{height:110px}
+  body.mob .subHead{padding:3px 8px;font-size:11px}
+  body.mob .subHead select{font-size:12px;padding:2px 4px}
+  body.mob #subLegend{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1}
+  body.mob .legend{left:6px;top:4px;font-size:10.5px;line-height:1.45;max-width:calc(100% - 66px)}
+  body.mob .legend .t{font-size:12px} body.mob .legend .t span{font-size:10.5px}
+  body.mob .legend .ohlc b{margin-left:4px}
+  body.mob .legend .ma{font-size:10px}
+  body.mob .legend .ohlc+.ohlc{display:none}
+  body.mob .demoTag{display:none}
   body.mob .detail{padding:12px 14px 16px}
   body.mob .newsList,body.mob .indInfo{max-height:none}
   body.mob .row{min-height:48px}
@@ -887,7 +896,7 @@ function drawChart(){
   { const bb=state.bb&&!cmpOn()?calcBB(shown):[]; for(const k of ['up','mid','dn']) bbS[k].setData(bb.map((v,i)=>v?{time:shown[i].time,value:v[k]}:null).filter(Boolean)); }
   if(typeof subReady!=='undefined'&&subReady&&isIndMode(state.subMode)) drawSub();   // 換股票／週期時，技術指標跟著重算
   if(shown.length&&(it.sym!==lastSym||state.tf!==lastTf)){
-    setRange(state.tf==='D'?0.5:state.tf==='W'?2:10);
+    setRange(document.body.classList.contains('mob')?(state.tf==='D'?0.25:state.tf==='W'?1:5):(state.tf==='D'?0.5:state.tf==='W'?2:10));
     lastSym=it.sym; lastTf=state.tf;
   }
   const st=status[it.sym], co=it.src&&['oil','fx'].includes(it.src.type);
@@ -1803,7 +1812,10 @@ const subL2=sub.addLineSeries({color:'#2196f3',lineWidth:1.5,priceLineVisible:fa
 let subRefs=[];  // 指標的參考線（KD 80/20、RSI 70/30、MACD 0 軸）
 let syncing=false, subData=[];
 chart.timeScale().subscribeVisibleLogicalRangeChange(r=>{ if(syncing||!r||!subReady) return; syncing=true; sub.timeScale().setVisibleLogicalRange(r); syncing=false; });
-sub.timeScale().subscribeVisibleLogicalRangeChange(r=>{ if(syncing||!r||!subData.length||subData.length!==shown.length) return; syncing=true; chart.timeScale().setVisibleLogicalRange(r); syncing=false; });
+// 只有使用者在副圖上拖曳／縮放時，才把副圖範圍同步回主圖（避免副圖剛載入時的預設範圍把主圖拉回最左邊）
+let subActive=0; const subTouch=()=>{ subActive=Date.now()+600; };
+['pointerdown','pointermove','wheel','touchstart','touchmove'].forEach(ev=>$('subChart').addEventListener(ev,e=>{ if(ev!=='pointermove'||e.buttons) subTouch(); },{passive:true,capture:true}));
+sub.timeScale().subscribeVisibleLogicalRangeChange(r=>{ if(syncing||!r||!subData.length||subData.length!==shown.length||Date.now()>subActive) return; syncing=true; chart.timeScale().setVisibleLogicalRange(r); syncing=false; });
 chart.subscribeCrosshairMove(p=>subLegend(p.time||null));
 
 const periodKey=(t,tf)=>{ if(tf==='D') return t; if(tf==='M') return t.slice(0,7)+'-01';
@@ -3035,7 +3047,11 @@ function mSet(v){
   window.scrollTo(0,0);
 }
 function mGoChart(){ if(document.body.classList.contains('mob')&&document.body.dataset.mv!=='chart') mSet('chart'); }
-function mApply(){ document.body.classList.toggle('mob',MQ.matches); if(MQ.matches) mSet(); }
+function mApply(){ const m=MQ.matches; document.body.classList.toggle('mob',m);
+  const w=m?50:72;   // 手機上價格刻度窄一點，讓 K 線寬一些；上方留空間給圖例
+  chart.priceScale('right').applyOptions({minimumWidth:w,scaleMargins:{top:m?0.16:0.12,bottom:0.2}}); sub.priceScale('right').applyOptions({minimumWidth:w});
+  chart.priceScale('vol').applyOptions({scaleMargins:{top:m?0.86:0.82,bottom:0}});
+  if(m){ mSet(); lastSym=null; drawChart(); } }
 document.querySelectorAll('#mnav button').forEach(b=>b.onclick=()=>mSet(b.dataset.v));
 $('mDrawBtn').onclick=()=>{ document.body.classList.toggle('mtools'); $('mDrawBtn').classList.toggle('on',document.body.classList.contains('mtools')); };
 MQ.addEventListener?MQ.addEventListener('change',mApply):MQ.addListener(mApply);
